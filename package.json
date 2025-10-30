@@ -1,0 +1,55 @@
+{
+  "name": "@noticewise/github-issue-sync",
+  "version": "1.0.0",
+  "description": "Bidirectional sync between local markdown tasks and GitHub issues with conflict resolution",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "github-issue-sync": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build",
+    "test": "echo \"Tests coming soon\" && exit 0"
+  },
+  "keywords": [
+    "github",
+    "issues",
+    "markdown",
+    "sync",
+    "task-management",
+    "bidirectional"
+  ],
+  "author": "Tom Hunter",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thunter009/github-issue-sync.git"
+  },
+  "dependencies": {
+    "@octokit/rest": "^22.0.0",
+    "chalk": "^4.1.2",
+    "commander": "^14.0.2",
+    "diff": "^8.0.2",
+    "dotenv": "^16.4.5",
+    "gray-matter": "^4.0.3",
+    "inquirer": "^9.3.8",
+    "ora": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/diff": "^8.0.0",
+    "@types/inquirer": "^9.0.9",
+    "@types/node": "^22",
+    "typescript": "^5"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
