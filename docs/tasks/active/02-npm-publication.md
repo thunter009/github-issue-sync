@@ -1,3 +1,11 @@
+---
+title: npm Registry Publication
+created_utc: 2025-01-10T00:00:00Z
+status: active
+priority: medium
+type: enhancement
+---
+
 # npm Registry Publication
 
 ## Summary
