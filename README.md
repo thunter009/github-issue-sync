@@ -1,49 +1,45 @@
 # GitHub Issue Sync
 
-Bidirectional sync between local markdown tasks and GitHub issues with interactive conflict resolution.
-
-## Features
-
-- ✅ **Bidirectional Sync** - Keep local markdown and GitHub issues in sync
-- 🔄 **Conflict Resolution** - Interactive prompts with colored diffs
-- 🏷️ **Smart Label Management** - Consistent colors for grouped labels
-- 📝 **Frontmatter Mapping** - Convert between YAML frontmatter and GitHub fields
-- ⚡ **Fast & Efficient** - Label caching, optimized API calls
-- 🎨 **Beautiful CLI** - Colored output, spinners, progress indicators
-
-## Installation
-
-### Global Install (Recommended)
-
-```bash
-npm install -g @noticewise/github-issue-sync
-```
-
-### Local Install (Per Project)
-
-```bash
-npm install --save-dev @noticewise/github-issue-sync
-```
-
-### Use with npx (No Install)
-
-```bash
-npx @noticewise/github-issue-sync --help
-```
+**Bidirectional sync between local markdown task files and GitHub issues with interactive conflict resolution.**
 
 ## Quick Start
 
-### 1. Configure Environment Variables
+```bash
+# Install and link for development
+npm install
+npm link
 
-Create `.env.local` or `.env` in your project root:
+# Set up environment
+export GITHUB_TOKEN=your_token_here
+export GITHUB_REPO=owner/repo
 
-```env
-GITHUB_TOKEN=ghp_your_github_personal_access_token
-GITHUB_REPO=owner/repo-name
+# Run sync
+github-issue-sync sync
 ```
 
-**Get a GitHub token**: https://github.com/settings/tokens/new
-- Required scopes: `repo` (full control of private repositories)
+## Tech Stack
+
+- Node.js 18+ & TypeScript
+- Octokit (GitHub API)
+- Commander (CLI framework)
+- Gray-matter (YAML frontmatter parsing)
+
+## Current Status
+
+- ✅ Bidirectional sync with conflict detection
+- ✅ Interactive conflict resolution
+- ✅ Label management with color schemes
+- 🚧 Test suite implementation
+- 📋 npm registry publication
+- 📋 GitHub Actions integration
+
+## Documentation
+
+📖 **[Full Documentation](docs/start-here.md)** - Complete setup and development guide
+
+📋 **[Current Tasks](docs/tasks/active/)** - What's being worked on now
+
+🔧 **[Quick Reference](docs/quick-reference.md)** - Commands and common fixes
 
 ### 2. Set Up Task Structure
 

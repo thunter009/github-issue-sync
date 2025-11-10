@@ -4,6 +4,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import { GitHubClient } from './github-client';
 import { MarkdownParser } from './markdown-parser';
 import { FieldMapper } from './field-mapper';
@@ -385,5 +386,129 @@ export class SyncEngine {
     if (filepath.includes('/active/')) return 'active';
     if (filepath.includes('/completed/')) return 'completed';
     return 'backlog';
+  }
+
+  /**
+   * Create new GitHub issues from local files without issue numbers
+   */
+  async createNewIssues(): Promise<{
+    created: Array<{ filename: string; issueNumber: number; newFilename: string }>;
+    errors: Array<{ filename: string; error: string }>;
+  }> {
+    const result = {
+      created: [] as Array<{ filename: string; issueNumber: number; newFilename: string }>,
+      errors: [] as Array<{ filename: string; error: string }>,
+    };
+
+    // Discover files without issue numbers
+    const newTasks = await this.parser.discoverNewTasks();
+
+    if (newTasks.length === 0) {
+      console.log('No new tasks to create');
+      return result;
+    }
+
+    console.log(`Found ${newTasks.length} new tasks to create on GitHub`);
+
+    // Get GitHub repo from environment
+    const githubRepo = process.env.GITHUB_REPO;
+    if (!githubRepo) {
+      throw new Error('GITHUB_REPO environment variable not set');
+    }
+
+    const state = this.loadState();
+
+    for (const task of newTasks) {
+      const oldFilename = task.filename;
+
+      try {
+        console.log(`Creating issue for ${oldFilename}...`);
+
+        // Build labels array from frontmatter
+        const labels: string[] = [];
+
+        if (task.frontmatter.priority) {
+          labels.push(`priority:${task.frontmatter.priority}`);
+        }
+        if (task.frontmatter.severity) {
+          labels.push(`severity:${task.frontmatter.severity}`);
+        }
+        if (task.frontmatter.component) {
+          const components = Array.isArray(task.frontmatter.component)
+            ? task.frontmatter.component
+            : [task.frontmatter.component];
+          components.forEach((c) => labels.push(`component:${c}`));
+        }
+        if (task.frontmatter.labels) {
+          labels.push(...task.frontmatter.labels);
+        }
+        if (task.frontmatter.type) {
+          labels.push(`type:${task.frontmatter.type}`);
+        }
+
+        // Build gh command
+        let ghCommand = `gh issue create --repo "${githubRepo}" --title "${task.frontmatter.title.replace(/"/g, '\\"')}"`;
+
+        // Add body from file
+        ghCommand += ` --body "$(cat "${task.filepath}")"`;
+
+        // Add labels if any
+        if (labels.length > 0) {
+          ghCommand += ` --label "${labels.join(',')}"`;
+        }
+
+        // Add assignee if present
+        if (task.frontmatter.assignee) {
+          ghCommand += ` --assignee "${task.frontmatter.assignee}"`;
+        }
+
+        // Execute gh command and capture output
+        const output = execSync(ghCommand, { encoding: 'utf-8' });
+
+        // Parse issue number from output URL (e.g., https://github.com/owner/repo/issues/123)
+        const urlMatch = output.match(/https:\/\/github\.com\/.+\/issues\/(\d+)/);
+        if (!urlMatch) {
+          throw new Error(`Failed to parse issue number from gh output: ${output}`);
+        }
+
+        const issueNumber = parseInt(urlMatch[1], 10);
+        console.log(`✓ Created issue #${issueNumber}`);
+
+        // Rename the file with the new issue number
+        const newFilepath = await this.parser.renameTask(task.filepath, issueNumber);
+        const newFilename = path.basename(newFilepath);
+
+        result.created.push({
+          filename: oldFilename,
+          issueNumber,
+          newFilename,
+        });
+
+        // Update sync state
+        const updatedTask = await this.parser.parseTask(newFilepath, issueNumber);
+        const issue = await this.github.getIssue(issueNumber);
+
+        if (issue) {
+          state.issues[issueNumber] = {
+            localHash: this.mapper.hashTask(updatedTask),
+            remoteHash: this.mapper.hashIssue(issue),
+            lastSyncedAt: new Date().toISOString(),
+          };
+        }
+
+        console.log(`✓ Renamed ${oldFilename} → ${newFilename}`);
+      } catch (error: any) {
+        console.error(`✗ Failed to create issue for ${oldFilename}: ${error.message}`);
+        result.errors.push({
+          filename: oldFilename,
+          error: error.message,
+        });
+      }
+    }
+
+    // Save updated state
+    this.saveState(state);
+
+    return result;
   }
 }

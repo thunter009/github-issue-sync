@@ -11,6 +11,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import path from 'path';
 import { config } from 'dotenv';
+import { execSync } from 'child_process';
 import { GitHubClient } from './lib/github-client';
 import { MarkdownParser } from './lib/markdown-parser';
 import { FieldMapper } from './lib/field-mapper';
@@ -21,12 +22,32 @@ import { ConflictResolver } from './lib/conflict-resolver';
 config({ path: path.join(process.cwd(), '.env.local') });
 config({ path: path.join(process.cwd(), '.env') });
 
-// Get environment variables
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-const GITHUB_REPO = process.env.GITHUB_REPO;
-
 // Use current working directory as project root (where command is run)
 const PROJECT_ROOT = process.cwd();
+
+/**
+ * Detect GitHub repo from git remote URL
+ */
+function detectGitHubRepo(): string | null {
+  try {
+    const remoteUrl = execSync('git config --get remote.origin.url', {
+      cwd: PROJECT_ROOT,
+      encoding: 'utf8',
+    }).trim();
+
+    // Parse owner/repo from URL formats:
+    // https://github.com/owner/repo.git
+    // git@github.com:owner/repo.git
+    const match = remoteUrl.match(/github\.com[:/]([^/]+\/[^/.]+)/);
+    return match ? match[1].replace(/\.git$/, '') : null;
+  } catch {
+    return null;
+  }
+}
+
+// Get environment variables
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const GITHUB_REPO = process.env.GITHUB_REPO || detectGitHubRepo();
 
 /**
  * Initialize sync components
@@ -46,9 +67,11 @@ function initializeSync(): {
   }
 
   if (!GITHUB_REPO) {
-    console.error(chalk.red('Error: GITHUB_REPO environment variable not set'));
-    console.error(chalk.gray('Set it in your .env.local file or export it:'));
-    console.error(chalk.gray('  export GITHUB_REPO=owner/repo-name'));
+    console.error(chalk.red('Error: Could not determine GitHub repository'));
+    console.error(chalk.gray('No git remote found and GITHUB_REPO not set.'));
+    console.error(chalk.gray('Either:'));
+    console.error(chalk.gray('  1. Add a GitHub remote: git remote add origin https://github.com/owner/repo'));
+    console.error(chalk.gray('  2. Set GITHUB_REPO in .env.local: GITHUB_REPO=owner/repo-name'));
     process.exit(1);
   }
 
@@ -141,10 +164,50 @@ program
 program
   .command('sync', { isDefault: true })
   .description('Bidirectional sync between local and GitHub')
-  .action(async () => {
+  .option('--create', 'Create new GitHub issues from files without issue numbers')
+  .action(async (options) => {
     const { github, engine, resolver } = initializeSync();
 
     await verifyAccess(github);
+
+    // Handle issue creation first if flag is set
+    if (options.create) {
+      const createSpinner = ora('Creating new issues...').start();
+
+      try {
+        const createResult = await engine.createNewIssues();
+
+        createSpinner.stop();
+
+        if (createResult.created.length > 0) {
+          console.log(chalk.bold.cyan('\n✓ Created Issues:'));
+          for (const item of createResult.created) {
+            console.log(
+              chalk.green(
+                `  ${item.filename} → #${item.issueNumber} (${item.newFilename})`
+              )
+            );
+          }
+        }
+
+        if (createResult.errors.length > 0) {
+          console.log(chalk.bold.red('\n✗ Failed to create:'));
+          for (const err of createResult.errors) {
+            console.log(chalk.red(`  ${err.filename}: ${err.error}`));
+          }
+        }
+
+        if (createResult.created.length === 0 && createResult.errors.length === 0) {
+          console.log(chalk.gray('No new issues to create'));
+        }
+
+        console.log();
+      } catch (error: any) {
+        createSpinner.fail('Issue creation failed');
+        console.error(chalk.red(`\nError: ${error.message}`));
+        process.exit(1);
+      }
+    }
 
     const spinner = ora('Syncing issues...').start();
 
@@ -280,6 +343,56 @@ program
       console.log();
     } catch (error: any) {
       spinner.fail('Status check failed');
+      console.error(chalk.red(`\nError: ${error.message}`));
+      process.exit(1);
+    }
+  });
+
+// Create command
+program
+  .command('create')
+  .description('Create new GitHub issues from files without issue numbers')
+  .action(async () => {
+    const { github, engine } = initializeSync();
+
+    await verifyAccess(github);
+
+    const spinner = ora('Creating new issues...').start();
+
+    try {
+      const result = await engine.createNewIssues();
+
+      spinner.stop();
+
+      console.log(chalk.bold('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+      console.log(chalk.bold.cyan('Issue Creation Results'));
+      console.log(chalk.bold('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'));
+
+      if (result.created.length > 0) {
+        console.log(chalk.green(`✓ Created ${result.created.length} issue(s):`));
+        for (const item of result.created) {
+          console.log(
+            chalk.gray(
+              `  ${item.filename} → #${item.issueNumber} (${item.newFilename})`
+            )
+          );
+        }
+      }
+
+      if (result.errors.length > 0) {
+        console.log(chalk.red(`\n✗ Failed ${result.errors.length} issue(s):`));
+        for (const err of result.errors) {
+          console.log(chalk.red(`  ${err.filename}: ${err.error}`));
+        }
+      }
+
+      if (result.created.length === 0 && result.errors.length === 0) {
+        console.log(chalk.gray('No new issues to create'));
+      }
+
+      console.log();
+    } catch (error: any) {
+      spinner.fail('Issue creation failed');
       console.error(chalk.red(`\nError: ${error.message}`));
       process.exit(1);
     }

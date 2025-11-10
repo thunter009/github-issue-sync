@@ -199,4 +199,82 @@ export class MarkdownParser {
 
     return false;
   }
+
+  /**
+   * Discover markdown files without issue numbers (for creation)
+   */
+  async discoverNewTasks(): Promise<TaskDocument[]> {
+    const tasks: TaskDocument[] = [];
+
+    const subdirs = ['backlog', 'active', 'completed'];
+
+    for (const subdir of subdirs) {
+      const dirPath = path.join(this.tasksDir, subdir);
+
+      if (!fs.existsSync(dirPath)) {
+        continue;
+      }
+
+      const files = fs.readdirSync(dirPath);
+
+      for (const file of files) {
+        if (!file.endsWith('.md') || file === 'README.md') {
+          continue;
+        }
+
+        // Skip files that already have issue numbers
+        const match = file.match(/^(\d+)-/);
+        if (match) {
+          continue;
+        }
+
+        const filepath = path.join(dirPath, file);
+
+        try {
+          // Parse without issue number (use -1 as placeholder)
+          const task = await this.parseTask(filepath, -1);
+          tasks.push(task);
+        } catch (error: any) {
+          console.warn(`Warning: Failed to parse ${filepath}: ${error.message}`);
+        }
+      }
+    }
+
+    return tasks;
+  }
+
+  /**
+   * Rename task file with new issue number
+   */
+  async renameTask(oldFilepath: string, issueNumber: number): Promise<string> {
+    const dir = path.dirname(oldFilepath);
+    const oldFilename = path.basename(oldFilepath);
+
+    // Generate new filename with issue number
+    let slug: string;
+
+    // Try to preserve existing slug if it looks reasonable
+    const slugMatch = oldFilename.match(/^(?:\d+-)?(.+)\.md$/);
+    if (slugMatch) {
+      slug = slugMatch[1];
+    } else {
+      // Fall back to generating from title
+      const content = fs.readFileSync(oldFilepath, 'utf-8');
+      const { data } = matter(content);
+      slug = this.generateSlug(data.title || 'untitled');
+    }
+
+    const newFilename = `${String(issueNumber).padStart(3, '0')}-${slug}.md`;
+    const newFilepath = path.join(dir, newFilename);
+
+    // Check if target file already exists
+    if (fs.existsSync(newFilepath)) {
+      throw new Error(`Cannot rename: file already exists at ${newFilepath}`);
+    }
+
+    // Rename the file
+    fs.renameSync(oldFilepath, newFilepath);
+
+    return newFilepath;
+  }
 }
