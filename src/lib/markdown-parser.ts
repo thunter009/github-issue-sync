@@ -292,24 +292,29 @@ export class MarkdownParser {
   }
 
   /**
-   * Rename task file with new issue number
+   * Rename task file with new issue number and optionally new title
    */
-  async renameTask(oldFilepath: string, issueNumber: number): Promise<string> {
+  async renameTask(oldFilepath: string, issueNumber: number, newTitle?: string): Promise<string> {
     const dir = path.dirname(oldFilepath);
     const oldFilename = path.basename(oldFilepath);
 
     // Generate new filename with issue number
     let slug: string;
 
-    // Try to preserve existing slug if it looks reasonable
-    const slugMatch = oldFilename.match(/^(?:\d+-)?(.+)\.md$/);
-    if (slugMatch) {
-      slug = slugMatch[1];
+    if (newTitle) {
+      // Use provided title to generate slug (e.g., from GitHub)
+      slug = this.generateSlug(newTitle);
     } else {
-      // Fall back to generating from title
-      const content = fs.readFileSync(oldFilepath, 'utf-8');
-      const { data } = matter(content);
-      slug = this.generateSlug(data.title || 'untitled');
+      // Try to preserve existing slug if it looks reasonable
+      const slugMatch = oldFilename.match(/^(?:\d+-)?(.+)\.md$/);
+      if (slugMatch) {
+        slug = slugMatch[1];
+      } else {
+        // Fall back to generating from title
+        const content = fs.readFileSync(oldFilepath, 'utf-8');
+        const { data } = matter(content);
+        slug = this.generateSlug(data.title || 'untitled');
+      }
     }
 
     const newFilename = `${String(issueNumber).padStart(3, '0')}-${slug}.md`;

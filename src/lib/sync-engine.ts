@@ -249,7 +249,8 @@ export class SyncEngine {
       try {
         const newFilepath = await this.parser.renameTask(
           existingTask.filepath,
-          existingTask.issueNumber
+          existingTask.issueNumber,
+          frontmatter.title // Pass GitHub title for slug generation
         );
         updatedTask = {
           ...updatedTask,
