@@ -1,5 +1,5 @@
 ---
-created_utc: 2025-01-10T00:00:00Z
+created_utc: 2025-01-10T00:00:00.000Z
 title: Create New Issues Feature
 severity: P2
 priority: medium
@@ -8,6 +8,7 @@ component: []
 labels: []
 reporter: thom
 status: backlog
+assignee: unassigned
 ---
 
 # Create New Issues Feature

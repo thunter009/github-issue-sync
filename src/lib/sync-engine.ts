@@ -244,18 +244,22 @@ export class SyncEngine {
       body,
     };
 
-    // Check if title changed - if so, regenerate slug and rename file
-    if (frontmatter.title && frontmatter.title !== existingTask.frontmatter.title) {
-      // Title changed - rename file with new slug
-      const newFilepath = await this.parser.renameTask(
-        existingTask.filepath,
-        existingTask.issueNumber
-      );
-      updatedTask = {
-        ...updatedTask,
-        filepath: newFilepath,
-        filename: path.basename(newFilepath),
-      };
+    // Always regenerate slug from GitHub title on pull
+    if (frontmatter.title) {
+      try {
+        const newFilepath = await this.parser.renameTask(
+          existingTask.filepath,
+          existingTask.issueNumber
+        );
+        updatedTask = {
+          ...updatedTask,
+          filepath: newFilepath,
+          filename: path.basename(newFilepath),
+        };
+      } catch (error: any) {
+        // If rename fails (e.g., file already exists), continue without renaming
+        console.warn(`Could not rename ${existingTask.filename}: ${error.message}`);
+      }
     }
 
     // Move to correct directory if status changed

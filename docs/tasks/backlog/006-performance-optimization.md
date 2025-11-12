@@ -1,5 +1,5 @@
 ---
-created_utc: 2025-01-10T00:00:00Z
+created_utc: 2025-01-10T00:00:00.000Z
 title: Performance Optimization
 severity: P3
 priority: low
@@ -8,6 +8,7 @@ component: []
 labels: []
 reporter: thom
 status: backlog
+assignee: unassigned
 ---
 
 # Performance Optimization
