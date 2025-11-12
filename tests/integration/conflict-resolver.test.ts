@@ -40,6 +40,7 @@ describe('ConflictResolver', () => {
           },
           body: 'Local body',
           lastModified: new Date('2025-01-11T14:00:00Z'),
+          folderLastModified: new Date('2025-01-11T13:00:00Z'),
         },
         remoteData: {
           number: 1,
@@ -83,6 +84,7 @@ describe('ConflictResolver', () => {
           },
           body: 'Local body',
           lastModified: new Date('2025-01-11T14:00:00Z'),
+          folderLastModified: new Date('2025-01-11T13:00:00Z'),
         },
         remoteData: {
           number: 2,
@@ -125,6 +127,7 @@ describe('ConflictResolver', () => {
           },
           body: 'Local body',
           lastModified: new Date('2025-01-11T14:00:00Z'),
+          folderLastModified: new Date('2025-01-11T13:00:00Z'),
         },
         remoteData: {
           number: 3,
@@ -168,6 +171,7 @@ describe('ConflictResolver', () => {
             },
             body: 'Body 1',
             lastModified: new Date(),
+            folderLastModified: new Date(),
           },
           remoteData: {
             number: 1,
@@ -201,6 +205,7 @@ describe('ConflictResolver', () => {
             },
             body: 'Body 2',
             lastModified: new Date(),
+            folderLastModified: new Date(),
           },
           remoteData: {
             number: 2,
@@ -250,6 +255,7 @@ describe('ConflictResolver', () => {
             },
             body: 'Body 1',
             lastModified: new Date(),
+            folderLastModified: new Date(),
           },
           remoteData: {
             number: 1,
@@ -283,6 +289,7 @@ describe('ConflictResolver', () => {
             },
             body: 'Body 2',
             lastModified: new Date(),
+            folderLastModified: new Date(),
           },
           remoteData: {
             number: 2,
