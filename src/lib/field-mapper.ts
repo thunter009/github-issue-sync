@@ -24,8 +24,8 @@ export class FieldMapper {
 
     // Combine all labels
     const labels = [
-      ...frontmatter.labels,
-      ...frontmatter.component.map((c) => `component:${c}`),
+      ...(Array.isArray(frontmatter.labels) ? frontmatter.labels : []),
+      ...(Array.isArray(frontmatter.component) ? frontmatter.component.map((c) => `component:${c}`) : []),
       `priority:${frontmatter.priority}`,
       `severity:${frontmatter.severity}`,
     ];
