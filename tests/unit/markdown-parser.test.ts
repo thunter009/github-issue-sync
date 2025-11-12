@@ -172,6 +172,7 @@ Body`;
         },
         body: 'Task body',
         lastModified: new Date(),
+        folderLastModified: new Date(),
       };
 
       await parser.writeTask(task);
@@ -206,6 +207,7 @@ Body`;
         },
         body: 'Body',
         lastModified: new Date(),
+        folderLastModified: new Date(),
       };
 
       await parser.writeTask(task);
@@ -274,6 +276,7 @@ Body`;
         },
         body: 'Body',
         lastModified: new Date(),
+        folderLastModified: new Date(),
       };
 
       const movedTask = await parser.moveTask(task, 'completed');
@@ -301,6 +304,7 @@ Body`;
         },
         body: 'Body',
         lastModified: new Date(),
+        folderLastModified: new Date(),
       };
 
       const result = await parser.moveTask(task, 'active');

@@ -13,8 +13,9 @@ describe('FieldMapper', () => {
       const task: TaskDocument = {
         issueNumber: 1,
         filename: '001-test-task.md',
-        filepath: '/path/to/001-test-task.md',
+        filepath: '/path/to/active/001-test-task.md',
         lastModified: new Date(),
+        folderLastModified: new Date(),
         frontmatter: {
           created_utc: '2025-01-10T00:00:00Z',
           reporter: 'thom',
@@ -49,8 +50,9 @@ describe('FieldMapper', () => {
       const task: TaskDocument = {
         issueNumber: 2,
         filename: '002-completed.md',
-        filepath: '/path/to/002-completed.md',
+        filepath: '/path/to/completed/002-completed.md',
         lastModified: new Date(),
+        folderLastModified: new Date(),
         frontmatter: {
           created_utc: '2025-01-10T00:00:00Z',
           completed_utc: '2025-01-11T00:00:00Z',
@@ -73,8 +75,9 @@ describe('FieldMapper', () => {
       const task: TaskDocument = {
         issueNumber: 3,
         filename: '003-unassigned.md',
-        filepath: '/path/to/003-unassigned.md',
+        filepath: '/path/to/active/003-unassigned.md',
         lastModified: new Date(),
+        folderLastModified: new Date(),
         frontmatter: {
           created_utc: '2025-01-10T00:00:00Z',
           reporter: 'thom',
@@ -96,8 +99,9 @@ describe('FieldMapper', () => {
       const task: TaskDocument = {
         issueNumber: 4,
         filename: '004-duplicates.md',
-        filepath: '/path/to/004-duplicates.md',
+        filepath: '/path/to/active/004-duplicates.md',
         lastModified: new Date(),
+        folderLastModified: new Date(),
         frontmatter: {
           created_utc: '2025-01-10T00:00:00Z',
           reporter: 'thom',
@@ -177,8 +181,9 @@ describe('FieldMapper', () => {
       const existingTask: TaskDocument = {
         issueNumber: 3,
         filename: '003-existing.md',
-        filepath: '/path/to/003-existing.md',
+        filepath: '/path/to/active/003-existing.md',
         lastModified: new Date(),
+        folderLastModified: new Date(),
         frontmatter: {
           created_utc: '2024-12-01T00:00:00Z',
           reporter: 'alice',
@@ -354,8 +359,9 @@ Issue content here
       const task: TaskDocument = {
         issueNumber: 1,
         filename: '001-test.md',
-        filepath: '/path/to/001-test.md',
+        filepath: '/path/to/active/001-test.md',
         lastModified: new Date(),
+        folderLastModified: new Date(),
         frontmatter: {
           created_utc: '2025-01-10T00:00:00Z',
           reporter: 'thom',
