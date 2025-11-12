@@ -78,7 +78,7 @@ function initializeSync(): {
   const github = new GitHubClient(GITHUB_TOKEN, GITHUB_REPO);
   const parser = new MarkdownParser(PROJECT_ROOT);
   const mapper = new FieldMapper();
-  const engine = new SyncEngine(github, parser, mapper, PROJECT_ROOT);
+  const engine = new SyncEngine(github, parser, mapper, PROJECT_ROOT, GITHUB_REPO);
   const resolver = new ConflictResolver(mapper);
 
   return { github, parser, mapper, engine, resolver };

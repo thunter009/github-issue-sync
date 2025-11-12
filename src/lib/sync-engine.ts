@@ -21,17 +21,20 @@ export class SyncEngine {
   private parser: MarkdownParser;
   private mapper: FieldMapper;
   private stateFile: string;
+  private githubRepo: string;
 
   constructor(
     github: GitHubClient,
     parser: MarkdownParser,
     mapper: FieldMapper,
-    projectRoot: string
+    projectRoot: string,
+    githubRepo: string
   ) {
     this.github = github;
     this.parser = parser;
     this.mapper = mapper;
     this.stateFile = path.join(projectRoot, '.sync-state.json');
+    this.githubRepo = githubRepo;
   }
 
   /**
@@ -171,8 +174,8 @@ export class SyncEngine {
       await this.github.updateIssue(task.issueNumber, issueData);
       console.log(`✓ Pushed #${task.issueNumber} to GitHub`);
     } else {
-      // Create new issue (this shouldn't happen if issue number exists)
-      console.warn(`Issue #${task.issueNumber} doesn't exist on GitHub - skipping`);
+      // Issue number exists locally but not on GitHub - can't create with specific number
+      console.warn(`Issue #${task.issueNumber} doesn't exist on GitHub - skipping (GitHub auto-assigns numbers)`);
     }
   }
 
@@ -410,12 +413,6 @@ export class SyncEngine {
 
     console.log(`Found ${newTasks.length} new tasks to create on GitHub`);
 
-    // Get GitHub repo from environment
-    const githubRepo = process.env.GITHUB_REPO;
-    if (!githubRepo) {
-      throw new Error('GITHUB_REPO environment variable not set');
-    }
-
     const state = this.loadState();
 
     for (const task of newTasks) {
@@ -447,7 +444,7 @@ export class SyncEngine {
         }
 
         // Build gh command
-        let ghCommand = `gh issue create --repo "${githubRepo}" --title "${task.frontmatter.title.replace(/"/g, '\\"')}"`;
+        let ghCommand = `gh issue create --repo "${this.githubRepo}" --title "${task.frontmatter.title.replace(/"/g, '\\"')}"`;
 
         // Add body from file
         ghCommand += ` --body "$(cat "${task.filepath}")"`;

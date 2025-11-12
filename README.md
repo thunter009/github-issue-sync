@@ -6,8 +6,8 @@
 
 ```bash
 # Install and link for development
-npm install
-npm link
+pnpm install
+pnpm link --global
 
 # Set up environment
 export GITHUB_TOKEN=your_token_here

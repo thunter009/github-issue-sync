@@ -31,7 +31,7 @@ describe('SyncEngine', () => {
 
     mapper = new FieldMapper();
 
-    engine = new SyncEngine(mockGitHub, mockParser, mapper, projectRoot);
+    engine = new SyncEngine(mockGitHub, mockParser, mapper, projectRoot, 'owner/repo');
 
     (fs.existsSync as jest.Mock).mockReturnValue(false);
     (fs.writeFileSync as jest.Mock).mockImplementation(() => {});
