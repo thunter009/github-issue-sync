@@ -443,6 +443,9 @@ export class SyncEngine {
           labels.push(`type:${task.frontmatter.type}`);
         }
 
+        // Ensure all labels exist on GitHub before creating issue
+        await this.github.ensureLabels(labels);
+
         // Build gh command
         let ghCommand = `gh issue create --repo "${this.githubRepo}" --title "${task.frontmatter.title.replace(/"/g, '\\"')}"`;
 
