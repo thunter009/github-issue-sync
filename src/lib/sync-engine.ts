@@ -393,6 +393,10 @@ export class SyncEngine {
 
   /**
    * Create new GitHub issues from local files without issue numbers
+   *
+   * Files are discovered (must not have NNN- prefix), issues created on GitHub,
+   * then files renamed with GitHub-assigned issue number (not manual numbering).
+   * This ensures local files always match GitHub's authoritative issue numbers.
    */
   async createNewIssues(): Promise<{
     created: Array<{ filename: string; issueNumber: number; newFilename: string }>;
@@ -474,7 +478,7 @@ export class SyncEngine {
         const issueNumber = parseInt(urlMatch[1], 10);
         console.log(`✓ Created issue #${issueNumber}`);
 
-        // Rename the file with the new issue number
+        // Rename file with GitHub-assigned number (always use GitHub's numbering, never manual)
         const newFilepath = await this.parser.renameTask(task.filepath, issueNumber);
         const newFilename = path.basename(newFilepath);
 
