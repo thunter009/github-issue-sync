@@ -96,8 +96,9 @@ export class SyncEngine {
         const issue = issues.get(task.issueNumber);
 
         if (!issue) {
-          // Issue doesn't exist on GitHub - push local to GitHub
-          await this.pushTask(task);
+          // Issue doesn't exist on GitHub - sync status before push
+          const updatedTask = await this.ensureStatusSync(task);
+          await this.pushTask(updatedTask);
           result.pushed.push(task.issueNumber);
           continue;
         }
@@ -130,8 +131,9 @@ export class SyncEngine {
         }
 
         if (localChanged) {
-          // Only local changed - push to GitHub
-          await this.pushTask(task, issue);
+          // Only local changed - sync status before push
+          const updatedTask = await this.ensureStatusSync(task);
+          await this.pushTask(updatedTask, issue);
           result.pushed.push(task.issueNumber);
         } else if (remoteChanged) {
           // Only remote changed - pull from GitHub
@@ -161,6 +163,53 @@ export class SyncEngine {
   }
 
   /**
+   * Ensure status field is synced with folder location
+   * Resolves conflicts, fills missing status, updates timestamps
+   */
+  async ensureStatusSync(task: TaskDocument): Promise<TaskDocument> {
+    const resolvedStatus = this.parser.resolveStatusConflict(task);
+
+    // If status needs updating
+    if (task.frontmatter.status !== resolvedStatus) {
+      const updatedFrontmatter = {
+        ...task.frontmatter,
+        status: resolvedStatus,
+        status_last_modified: new Date().toISOString(),
+      };
+
+      const updatedTask = {
+        ...task,
+        frontmatter: updatedFrontmatter,
+      };
+
+      // Write back to file
+      await this.parser.writeTask(updatedTask);
+
+      return updatedTask;
+    }
+
+    // If status missing but matches folder, just add it
+    if (!task.frontmatter.status) {
+      const updatedFrontmatter = {
+        ...task.frontmatter,
+        status: resolvedStatus,
+        status_last_modified: new Date().toISOString(),
+      };
+
+      const updatedTask = {
+        ...task,
+        frontmatter: updatedFrontmatter,
+      };
+
+      await this.parser.writeTask(updatedTask);
+
+      return updatedTask;
+    }
+
+    return task;
+  }
+
+  /**
    * Push local task to GitHub
    */
   async pushTask(task: TaskDocument, existingIssue?: GitHubIssueData): Promise<void> {
@@ -180,13 +229,13 @@ export class SyncEngine {
   }
 
   /**
-   * Pull GitHub issue to local task
+   * Pull GitHub issue to local task (updates slug from GitHub title)
    */
   async pullIssue(issue: GitHubIssueData, existingTask: TaskDocument): Promise<void> {
     const { frontmatter, body } = this.mapper.githubToTask(issue, existingTask);
 
     // Update task
-    const updatedTask: TaskDocument = {
+    let updatedTask: TaskDocument = {
       ...existingTask,
       frontmatter: {
         ...existingTask.frontmatter,
@@ -195,9 +244,23 @@ export class SyncEngine {
       body,
     };
 
+    // Check if title changed - if so, regenerate slug and rename file
+    if (frontmatter.title && frontmatter.title !== existingTask.frontmatter.title) {
+      // Title changed - rename file with new slug
+      const newFilepath = await this.parser.renameTask(
+        existingTask.filepath,
+        existingTask.issueNumber
+      );
+      updatedTask = {
+        ...updatedTask,
+        filepath: newFilepath,
+        filename: path.basename(newFilepath),
+      };
+    }
+
     // Move to correct directory if status changed
     const newStatus = frontmatter.status || existingTask.frontmatter.status || 'backlog';
-    const currentStatus = this.getTaskStatus(existingTask.filepath);
+    const currentStatus = this.getTaskStatus(updatedTask.filepath);
 
     if (newStatus !== currentStatus) {
       const movedTask = await this.parser.moveTask(updatedTask, newStatus);

@@ -27,6 +27,9 @@ describe('SyncEngine', () => {
     mockParser = {
       discoverTasks: jest.fn(),
       writeTask: jest.fn(),
+      resolveStatusConflict: jest.fn().mockImplementation((task) => task.frontmatter.status || 'backlog'),
+      renameTask: jest.fn().mockImplementation(async (filepath, _issueNum) => filepath),
+      moveTask: jest.fn().mockImplementation(async (task, _status) => task),
     } as any;
 
     mapper = new FieldMapper();
@@ -54,6 +57,7 @@ describe('SyncEngine', () => {
         },
         body: 'Task body',
         lastModified: new Date('2025-01-10T12:00:00Z'),
+        folderLastModified: new Date('2025-01-10T11:00:00Z'),
       };
 
       mockParser.discoverTasks.mockResolvedValue([task]);
@@ -86,6 +90,7 @@ describe('SyncEngine', () => {
         },
         body: 'Old body',
         lastModified: new Date('2025-01-10T12:00:00Z'),
+        folderLastModified: new Date('2025-01-10T11:00:00Z'),
       };
 
       const issue: GitHubIssueData = {
@@ -142,6 +147,7 @@ describe('SyncEngine', () => {
         },
         body: 'Local body',
         lastModified: new Date('2025-01-11T14:00:00Z'),
+        folderLastModified: new Date('2025-01-11T13:00:00Z'),
       };
 
       const issue: GitHubIssueData = {
@@ -200,6 +206,7 @@ describe('SyncEngine', () => {
         },
         body: 'Task body',
         lastModified: new Date('2025-01-10T12:00:00Z'),
+        folderLastModified: new Date('2025-01-10T11:00:00Z'),
       };
 
       const issue: GitHubIssueData = {
