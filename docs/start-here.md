@@ -11,13 +11,13 @@
 ### 1. Get the Code Running
 ```bash
 # Install dependencies
-npm install
+pnpm install
 
 # Build TypeScript
-npm run build
+pnpm run build
 
 # Link for local testing
-npm link
+pnpm link --global
 
 # Set up environment (.env.local)
 echo "GITHUB_TOKEN=your_github_token" > .env.local

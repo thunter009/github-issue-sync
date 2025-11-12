@@ -10,12 +10,12 @@ GitHub Issue Sync - Bidirectional sync between local markdown task files and Git
 
 ```bash
 # Development
-npm run build    # Compile TypeScript to dist/
-npm run dev      # Watch mode - recompile on changes
-npm run clean    # Remove dist/ directory
+pnpm run build    # Compile TypeScript to dist/
+pnpm run dev      # Watch mode - recompile on changes
+pnpm run clean    # Remove dist/ directory
 
 # Testing local changes
-npm link         # Install globally for testing
+pnpm link --global  # Install globally for testing
 github-issue-sync sync    # Test full sync
 github-issue-sync status  # Dry run to see what would change
 
@@ -68,3 +68,4 @@ Labels auto-created with consistent colors:
 - Metadata preserved in GitHub via HTML comments in issue body
 - API requests chunked (10 at a time) for rate limiting
 - Environment vars loaded from `.env.local` > `.env` > process env
+- use pnpm for this repo instead of npm
