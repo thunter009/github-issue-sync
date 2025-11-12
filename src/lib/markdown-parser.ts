@@ -315,6 +315,11 @@ export class MarkdownParser {
     const newFilename = `${String(issueNumber).padStart(3, '0')}-${slug}.md`;
     const newFilepath = path.join(dir, newFilename);
 
+    // If filename is already correct, no need to rename
+    if (oldFilepath === newFilepath) {
+      return oldFilepath;
+    }
+
     // Check if target file already exists
     if (fs.existsSync(newFilepath)) {
       throw new Error(`Cannot rename: file already exists at ${newFilepath}`);
