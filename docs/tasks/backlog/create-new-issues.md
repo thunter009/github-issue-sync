@@ -1,3 +1,15 @@
+---
+created_utc: 2025-01-10T00:00:00Z
+title: Create New Issues Feature
+severity: P2
+priority: medium
+type: feature
+component: []
+labels: []
+reporter: thom
+status: backlog
+---
+
 # Create New Issues Feature
 
 ## Summary

@@ -1,3 +1,15 @@
+---
+created_utc: 2025-01-10T00:00:00Z
+title: Performance Optimization
+severity: P3
+priority: low
+type: enhancement
+component: []
+labels: []
+reporter: thom
+status: backlog
+---
+
 # Performance Optimization
 
 ## Summary

@@ -1,3 +1,15 @@
+---
+created_utc: 2025-01-10T00:00:00Z
+title: GitHub Actions Integration
+severity: P2
+priority: medium
+type: enhancement
+component: []
+labels: []
+reporter: thom
+status: backlog
+---
+
 # GitHub Actions Integration
 
 ## Summary
