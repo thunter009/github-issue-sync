@@ -2,7 +2,7 @@
   "name": "@noticewise/github-issue-sync",
   "version": "1.0.0",
   "description": "Bidirectional sync between local markdown tasks and GitHub issues with conflict resolution",
-  "packageManager": "pnpm@8.15.0",
+  "packageManager": "pnpm@10.21.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
