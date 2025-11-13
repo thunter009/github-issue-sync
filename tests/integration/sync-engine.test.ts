@@ -252,6 +252,255 @@ describe('SyncEngine', () => {
     });
   });
 
+  describe('ensureStatusSync', () => {
+    it('should resolve conflict and update file', async () => {
+      const task: TaskDocument = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: '/path/to/active/001-test.md',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          title: 'Test',
+          severity: 'P2',
+          priority: 'high',
+          component: [],
+          labels: [],
+          reporter: 'thom',
+          status: 'backlog', // Conflict with active/ folder
+        },
+        body: 'Body',
+      };
+
+      mockParser.resolveStatusConflict.mockReturnValue('active');
+
+      const result = await (engine as any).ensureStatusSync(task);
+
+      expect(mockParser.writeTask).toHaveBeenCalled();
+      expect(result.frontmatter.status).toBe('active');
+      expect(result.frontmatter.status_last_modified).toBeTruthy();
+    });
+
+    it('should auto-fill missing status and write', async () => {
+      const task: TaskDocument = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: '/path/to/backlog/001-test.md',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          title: 'Test',
+          severity: 'P2',
+          priority: 'high',
+          component: [],
+          labels: [],
+          reporter: 'thom',
+          // status missing
+        },
+        body: 'Body',
+      };
+
+      mockParser.resolveStatusConflict.mockReturnValue('backlog');
+
+      const result = await (engine as any).ensureStatusSync(task);
+
+      expect(mockParser.writeTask).toHaveBeenCalled();
+      expect(result.frontmatter.status).toBe('backlog');
+      expect(result.frontmatter.status_last_modified).toBeTruthy();
+    });
+
+    it('should not update when already synced', async () => {
+      const task: TaskDocument = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: '/path/to/active/001-test.md',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          title: 'Test',
+          severity: 'P2',
+          priority: 'high',
+          component: [],
+          labels: [],
+          reporter: 'thom',
+          status: 'active', // Matches folder
+        },
+        body: 'Body',
+      };
+
+      mockParser.resolveStatusConflict.mockReturnValue('active');
+
+      const result = await (engine as any).ensureStatusSync(task);
+
+      expect(mockParser.writeTask).not.toHaveBeenCalled();
+      expect(result).toBe(task); // Unchanged
+    });
+
+    it('should set status_last_modified timestamp', async () => {
+      const task: TaskDocument = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: '/path/to/completed/001-test.md',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          title: 'Test',
+          severity: 'P2',
+          priority: 'high',
+          component: [],
+          labels: [],
+          reporter: 'thom',
+          status: 'active',
+        },
+        body: 'Body',
+      };
+
+      mockParser.resolveStatusConflict.mockReturnValue('completed');
+
+      const result = await (engine as any).ensureStatusSync(task);
+
+      expect(result.frontmatter.status_last_modified).toMatch(/^\d{4}-\d{2}-\d{2}T/); // ISO format
+      const timestamp = new Date(result.frontmatter.status_last_modified);
+      expect(timestamp.getTime()).toBeGreaterThan(Date.now() - 5000); // Recent
+    });
+  });
+
+  describe('pullIssue', () => {
+    it('should regenerate slug from GitHub title', async () => {
+      const task: TaskDocument = {
+        issueNumber: 3,
+        filename: '003-old-name.md',
+        filepath: '/path/to/active/003-old-name.md',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          title: 'Old Name',
+          severity: 'P2',
+          priority: 'high',
+          component: [],
+          labels: [],
+          reporter: 'thom',
+        },
+        body: 'Body',
+      };
+
+      const issue: GitHubIssueData = {
+        number: 3,
+        title: 'New Feature Title',
+        body: 'Updated body',
+        state: 'open',
+        labels: ['priority:high', 'severity:P2'],
+        assignee: null,
+        created_at: '2025-01-10T00:00:00Z',
+        updated_at: '2025-01-11T00:00:00Z',
+        closed_at: null,
+      };
+
+      mockParser.renameTask.mockResolvedValue('/path/to/active/003-new-feature-title.md');
+
+      await (engine as any).pullIssue(issue, task);
+
+      expect(mockParser.renameTask).toHaveBeenCalledWith(
+        '/path/to/active/003-old-name.md',
+        3,
+        'New Feature Title'
+      );
+      expect(mockParser.writeTask).toHaveBeenCalled();
+    });
+
+    it('should handle rename failure gracefully', async () => {
+      const task: TaskDocument = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: '/path/to/active/001-test.md',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          title: 'Test',
+          severity: 'P2',
+          priority: 'high',
+          component: [],
+          labels: [],
+          reporter: 'thom',
+        },
+        body: 'Body',
+      };
+
+      const issue: GitHubIssueData = {
+        number: 1,
+        title: 'New Title',
+        body: 'Body',
+        state: 'open',
+        labels: [],
+        assignee: null,
+        created_at: '2025-01-10T00:00:00Z',
+        updated_at: '2025-01-11T00:00:00Z',
+        closed_at: null,
+      };
+
+      mockParser.renameTask.mockRejectedValue(new Error('File exists'));
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+      await (engine as any).pullIssue(issue, task);
+
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Could not rename'));
+      expect(mockParser.writeTask).toHaveBeenCalled(); // Continues despite error
+
+      warnSpy.mockRestore();
+    });
+
+    it('should move file when status changes', async () => {
+      const task: TaskDocument = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: '/path/to/active/001-test.md',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          title: 'Test',
+          severity: 'P2',
+          priority: 'high',
+          component: [],
+          labels: [],
+          reporter: 'thom',
+          status: 'active',
+        },
+        body: 'Body',
+      };
+
+      const issue: GitHubIssueData = {
+        number: 1,
+        title: 'Test',
+        body: 'Body',
+        state: 'closed', // Now closed
+        labels: ['status:completed'],
+        assignee: null,
+        created_at: '2025-01-10T00:00:00Z',
+        updated_at: '2025-01-11T00:00:00Z',
+        closed_at: '2025-01-11T00:00:00Z',
+      };
+
+      mockParser.moveTask.mockResolvedValue({
+        ...task,
+        filepath: '/path/to/completed/001-test.md',
+      });
+
+      await (engine as any).pullIssue(issue, task);
+
+      expect(mockParser.moveTask).toHaveBeenCalledWith(
+        expect.objectContaining({ issueNumber: 1 }),
+        'completed'
+      );
+    });
+  });
+
   describe('state management', () => {
     it('should load state from file', () => {
       const mockState = {

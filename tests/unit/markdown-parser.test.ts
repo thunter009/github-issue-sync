@@ -98,6 +98,40 @@ Body`);
   });
 
   describe('parseTask', () => {
+    it('should capture folderLastModified from parent directory', async () => {
+      const filepath = path.join(tasksDir, 'active', '001-test.md');
+      const content = `---
+created_utc: 2025-01-10T00:00:00Z
+title: Test Task
+severity: P1
+priority: high
+component: []
+labels: []
+reporter: alice
+---
+
+Task body`;
+
+      const fileMtime = new Date('2025-01-10T12:00:00Z');
+      const dirMtime = new Date('2025-01-10T11:00:00Z');
+
+      (fs.readFileSync as jest.Mock).mockReturnValue(content);
+      (fs.statSync as jest.Mock).mockImplementation((statPath: string) => {
+        if (statPath === filepath) {
+          return { mtime: fileMtime };
+        }
+        if (statPath === path.dirname(filepath)) {
+          return { mtime: dirMtime };
+        }
+        return { mtime: new Date() };
+      });
+
+      const task = await parser.parseTask(filepath, 1);
+
+      expect(task.folderLastModified).toEqual(dirMtime);
+      expect(task.lastModified).toEqual(fileMtime);
+    });
+
     it('should parse task file with frontmatter', async () => {
       const filepath = path.join(tasksDir, 'active', '001-test.md');
       const content = `---
@@ -454,6 +488,42 @@ Feature description`;
         'Cannot rename: file already exists'
       );
     });
+
+    it('should skip rename when filename already correct', async () => {
+      const oldFilepath = path.join(tasksDir, 'active', '005-my-feature.md');
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+
+      const newFilepath = await parser.renameTask(oldFilepath, 5);
+
+      expect(newFilepath).toBe(oldFilepath);
+      expect(fs.renameSync).not.toHaveBeenCalled();
+    });
+
+    it('should use provided title to generate slug', async () => {
+      const oldFilepath = path.join(tasksDir, 'active', '003-old-name.md');
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+
+      const newFilepath = await parser.renameTask(oldFilepath, 3, 'Brand New Feature Title');
+
+      expect(fs.renameSync).toHaveBeenCalledWith(
+        oldFilepath,
+        path.join(tasksDir, 'active', '003-brand-new-feature-title.md')
+      );
+      expect(newFilepath).toBe(path.join(tasksDir, 'active', '003-brand-new-feature-title.md'));
+    });
+
+    it('should preserve slug when no title provided', async () => {
+      const oldFilepath = path.join(tasksDir, 'active', '007-existing-slug.md');
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+
+      const newFilepath = await parser.renameTask(oldFilepath, 7);
+
+      expect(newFilepath).toBe(oldFilepath); // Same number, same slug
+      expect(fs.renameSync).not.toHaveBeenCalled();
+    });
   });
 
   describe('getTaskDir', () => {
@@ -461,6 +531,162 @@ Feature description`;
       expect(parser.getTaskDir('active')).toBe(path.join(tasksDir, 'active'));
       expect(parser.getTaskDir('backlog')).toBe(path.join(tasksDir, 'backlog'));
       expect(parser.getTaskDir('completed')).toBe(path.join(tasksDir, 'completed'));
+    });
+  });
+
+  describe('resolveStatusConflict', () => {
+    it('should return folder status when status field missing', () => {
+      const task = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: path.join(tasksDir, 'active', '001-test.md'),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          title: 'Test',
+          severity: 'P2' as const,
+          priority: 'high' as const,
+          component: [],
+          labels: [],
+          reporter: 'alice',
+          // status missing
+        },
+        body: 'Body',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+      };
+
+      const result = parser.resolveStatusConflict(task);
+
+      expect(result).toBe('active');
+    });
+
+    it('should return status when it matches folder', () => {
+      const task = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: path.join(tasksDir, 'backlog', '001-test.md'),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          title: 'Test',
+          severity: 'P2' as const,
+          priority: 'high' as const,
+          component: [],
+          labels: [],
+          reporter: 'alice',
+          status: 'backlog' as const,
+        },
+        body: 'Body',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+      };
+
+      const result = parser.resolveStatusConflict(task);
+
+      expect(result).toBe('backlog');
+    });
+
+    it('should favor folder when status_last_modified missing', () => {
+      const task = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: path.join(tasksDir, 'completed', '001-test.md'),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          title: 'Test',
+          severity: 'P2' as const,
+          priority: 'high' as const,
+          component: [],
+          labels: [],
+          reporter: 'alice',
+          status: 'active' as const,
+          // status_last_modified missing
+        },
+        body: 'Body',
+        lastModified: new Date(),
+        folderLastModified: new Date('2025-01-12T00:00:00Z'),
+      };
+
+      const result = parser.resolveStatusConflict(task);
+
+      expect(result).toBe('completed'); // Folder wins
+    });
+
+    it('should favor folder when folder mtime newer', () => {
+      const task = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: path.join(tasksDir, 'active', '001-test.md'),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          title: 'Test',
+          severity: 'P2' as const,
+          priority: 'high' as const,
+          component: [],
+          labels: [],
+          reporter: 'alice',
+          status: 'backlog' as const,
+          status_last_modified: '2025-01-11T00:00:00Z',
+        },
+        body: 'Body',
+        lastModified: new Date(),
+        folderLastModified: new Date('2025-01-12T00:00:00Z'), // Newer
+      };
+
+      const result = parser.resolveStatusConflict(task);
+
+      expect(result).toBe('active'); // Folder wins (more recent)
+    });
+
+    it('should favor status when status_last_modified newer', () => {
+      const task = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: path.join(tasksDir, 'active', '001-test.md'),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          title: 'Test',
+          severity: 'P2' as const,
+          priority: 'high' as const,
+          component: [],
+          labels: [],
+          reporter: 'alice',
+          status: 'completed' as const,
+          status_last_modified: '2025-01-12T00:00:00Z', // Newer
+        },
+        body: 'Body',
+        lastModified: new Date(),
+        folderLastModified: new Date('2025-01-11T00:00:00Z'),
+      };
+
+      const result = parser.resolveStatusConflict(task);
+
+      expect(result).toBe('completed'); // Status wins (more recent)
+    });
+
+    it('should favor folder when status_last_modified is epoch', () => {
+      const task = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: path.join(tasksDir, 'backlog', '001-test.md'),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          title: 'Test',
+          severity: 'P2' as const,
+          priority: 'high' as const,
+          component: [],
+          labels: [],
+          reporter: 'alice',
+          status: 'active' as const,
+          status_last_modified: '1970-01-01T00:00:00.000Z', // Epoch
+        },
+        body: 'Body',
+        lastModified: new Date(),
+        folderLastModified: new Date('2025-01-11T00:00:00Z'),
+      };
+
+      const result = parser.resolveStatusConflict(task);
+
+      expect(result).toBe('backlog'); // Folder wins
     });
   });
 });

@@ -381,6 +381,109 @@ Issue content here
     });
   });
 
+  describe('folder-based state mapping', () => {
+    it('should map completed folder to closed state', () => {
+      const task: TaskDocument = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: '/path/to/completed/001-test.md',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          title: 'Completed Task',
+          severity: 'P2',
+          priority: 'high',
+          component: [],
+          labels: [],
+          reporter: 'thom',
+          status: 'completed',
+        },
+        body: 'Done',
+      };
+
+      const result = mapper.taskToGitHub(task);
+
+      expect(result.state).toBe('closed');
+    });
+
+    it('should map active folder to open state', () => {
+      const task: TaskDocument = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: '/path/to/active/001-test.md',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          title: 'Active Task',
+          severity: 'P2',
+          priority: 'high',
+          component: [],
+          labels: [],
+          reporter: 'thom',
+          status: 'active',
+        },
+        body: 'In progress',
+      };
+
+      const result = mapper.taskToGitHub(task);
+
+      expect(result.state).toBe('open');
+    });
+
+    it('should map backlog folder to open state', () => {
+      const task: TaskDocument = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: '/path/to/backlog/001-test.md',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          title: 'Backlog Task',
+          severity: 'P2',
+          priority: 'low',
+          component: [],
+          labels: [],
+          reporter: 'thom',
+          status: 'backlog',
+        },
+        body: 'Future work',
+      };
+
+      const result = mapper.taskToGitHub(task);
+
+      expect(result.state).toBe('open');
+    });
+
+    it('should use folder for state even when status field differs', () => {
+      const task: TaskDocument = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: '/path/to/active/001-test.md',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          title: 'Task',
+          severity: 'P2',
+          priority: 'high',
+          component: [],
+          labels: [],
+          reporter: 'thom',
+          status: 'completed', // Says completed but in active/ folder
+        },
+        body: 'Body',
+      };
+
+      const result = mapper.taskToGitHub(task);
+
+      expect(result.state).toBe('open'); // Folder wins (active/)
+      expect(result.labels).toContain('status:completed'); // But status still in labels
+    });
+  });
+
   describe('hashIssue', () => {
     it('should generate hash for GitHub issue', () => {
       const issue: GitHubIssueData = {
