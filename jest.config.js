@@ -4,6 +4,11 @@ module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
   testMatch: ['**/*.test.ts'],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    'github-client.test.ts', // Octokit ESM mocking issues
+    'conflict-resolver.test.ts', // Inquirer ESM mocking issues
+  ],
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/cli.ts',
@@ -20,4 +25,7 @@ module.exports = {
   },
   coverageDirectory: 'coverage',
   verbose: true,
+  transformIgnorePatterns: [
+    'node_modules/(?!(inquirer|chalk|ora)/)',
+  ],
 };

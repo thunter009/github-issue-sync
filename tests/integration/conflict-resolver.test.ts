@@ -3,17 +3,18 @@ import { ConflictResolver } from '../../src/lib/conflict-resolver';
 import { FieldMapper } from '../../src/lib/field-mapper';
 import { SyncConflict } from '../../src/lib/types';
 
-// Mock inquirer
-jest.mock('inquirer');
-
 describe('ConflictResolver', () => {
   let resolver: ConflictResolver;
   let mapper: FieldMapper;
+  let promptSpy: jest.SpyInstance;
 
   beforeEach(() => {
     mapper = new FieldMapper();
     resolver = new ConflictResolver(mapper);
     jest.spyOn(console, 'log').mockImplementation();
+
+    // Spy on inquirer.prompt
+    promptSpy = jest.spyOn(inquirer, 'prompt').mockImplementation(() => Promise.resolve({} as any));
   });
 
   afterEach(() => {
@@ -57,12 +58,12 @@ describe('ConflictResolver', () => {
         remoteModified: new Date('2025-01-11T13:00:00Z'),
       };
 
-      (inquirer.prompt as unknown as jest.Mock).mockResolvedValue({ resolution: 'local' });
+      promptSpy.mockResolvedValue({ resolution: 'local' });
 
       const resolutions = await resolver.resolveConflicts([conflict]);
 
       expect(resolutions.get(1)).toBe('local');
-      expect(inquirer.prompt).toHaveBeenCalledTimes(1);
+      expect(promptSpy).toHaveBeenCalledTimes(1);
     });
 
     it('should resolve single conflict with remote choice', async () => {
@@ -101,7 +102,7 @@ describe('ConflictResolver', () => {
         remoteModified: new Date('2025-01-11T13:00:00Z'),
       };
 
-      (inquirer.prompt as unknown as jest.Mock).mockResolvedValue({ resolution: 'remote' });
+      promptSpy.mockResolvedValue({ resolution: 'remote' });
 
       const resolutions = await resolver.resolveConflicts([conflict]);
 
@@ -144,7 +145,7 @@ describe('ConflictResolver', () => {
         remoteModified: new Date('2025-01-11T13:00:00Z'),
       };
 
-      (inquirer.prompt as unknown as jest.Mock).mockResolvedValue({ resolution: 'skip' });
+      promptSpy.mockResolvedValue({ resolution: 'skip' });
 
       const resolutions = await resolver.resolveConflicts([conflict]);
 
@@ -223,16 +224,16 @@ describe('ConflictResolver', () => {
         },
       ];
 
-      (inquirer.prompt as unknown as jest.Mock)
-        .mockResolvedValueOnce({ resolution: 'local' })
-        .mockResolvedValueOnce({ resolution: 'remote' });
+      promptSpy
+        .mockResolvedValueOnce({ resolution: 'local' } as any)
+        .mockResolvedValueOnce({ resolution: 'remote' } as any);
 
       const resolutions = await resolver.resolveConflicts(conflicts);
 
       expect(resolutions.size).toBe(2);
       expect(resolutions.get(1)).toBe('local');
       expect(resolutions.get(2)).toBe('remote');
-      expect(inquirer.prompt).toHaveBeenCalledTimes(2);
+      expect(promptSpy).toHaveBeenCalledTimes(2);
     });
 
     it('should handle skip-all option', async () => {
@@ -307,14 +308,14 @@ describe('ConflictResolver', () => {
         },
       ];
 
-      (inquirer.prompt as unknown as jest.Mock).mockResolvedValueOnce({ resolution: 'skip-all' });
+      promptSpy.mockResolvedValueOnce({ resolution: 'skip-all' });
 
       const resolutions = await resolver.resolveConflicts(conflicts);
 
       expect(resolutions.size).toBe(2);
       expect(resolutions.get(1)).toBe('skip');
       expect(resolutions.get(2)).toBe('skip');
-      expect(inquirer.prompt).toHaveBeenCalledTimes(1); // Only once due to skip-all
+      expect(promptSpy).toHaveBeenCalledTimes(1); // Only once due to skip-all
     });
   });
 });

@@ -1,15 +1,10 @@
 import { GitHubClient } from '../../src/lib/github-client';
 import { Octokit } from '@octokit/rest';
 
-// Mock Octokit
-jest.mock('@octokit/rest');
-
-describe('GitHubClient', () => {
-  let client: GitHubClient;
-  let mockOctokit: jest.Mocked<Octokit>;
-
-  beforeEach(() => {
-    mockOctokit = {
+// Mock Octokit module
+jest.mock('@octokit/rest', () => {
+  return {
+    Octokit: jest.fn().mockImplementation(() => ({
       issues: {
         get: jest.fn(),
         create: jest.fn(),
@@ -21,11 +16,18 @@ describe('GitHubClient', () => {
       repos: {
         get: jest.fn(),
       },
-    } as any;
+    })),
+  };
+});
 
-    (Octokit as jest.MockedClass<typeof Octokit>).mockImplementation(() => mockOctokit);
+describe('GitHubClient', () => {
+  let client: GitHubClient;
+  let mockOctokit: any;
 
+  beforeEach(() => {
+    jest.clearAllMocks();
     client = new GitHubClient('test-token', 'owner/repo');
+    mockOctokit = (client as any).octokit;
   });
 
   describe('constructor', () => {
@@ -54,7 +56,7 @@ describe('GitHubClient', () => {
         closed_at: null,
       };
 
-      (mockOctokit.issues.get as jest.Mock).mockResolvedValue({ data: mockIssue } as any);
+      mockOctokit.issues.get.mockResolvedValue({ data: mockIssue } as any);
 
       const issue = await client.getIssue(1);
 
@@ -99,7 +101,7 @@ describe('GitHubClient', () => {
     });
 
     it('should return null for 404 errors', async () => {
-      (mockOctokit.issues.get as jest.Mock).mockRejectedValue({ status: 404 });
+      mockOctokit.issues.get.mockRejectedValue({ status: 404 });
 
       const issue = await client.getIssue(999);
 
@@ -107,7 +109,7 @@ describe('GitHubClient', () => {
     });
 
     it('should throw for other errors', async () => {
-      (mockOctokit.issues.get as jest.Mock).mockRejectedValue(new Error('API Error'));
+      mockOctokit.issues.get.mockRejectedValue(new Error('API Error'));
 
       await expect(client.getIssue(1)).rejects.toThrow('API Error');
     });
@@ -125,7 +127,7 @@ describe('GitHubClient', () => {
         closed_at: null,
       };
 
-      (mockOctokit.issues.get as jest.Mock).mockResolvedValue({ data: mockIssue } as any);
+      mockOctokit.issues.get.mockResolvedValue({ data: mockIssue } as any);
 
       const issue = await client.getIssue(1);
 
@@ -135,7 +137,7 @@ describe('GitHubClient', () => {
 
   describe('getIssues', () => {
     it('should fetch multiple issues in chunks', async () => {
-      (mockOctokit.issues.get as jest.Mock).mockImplementation(async ({ issue_number }: any) => {
+      mockOctokit.issues.get.mockImplementation(async ({ issue_number }: any) => {
         return {
           data: {
             number: issue_number,
@@ -160,7 +162,7 @@ describe('GitHubClient', () => {
     });
 
     it('should handle mixed success and failures', async () => {
-      (mockOctokit.issues.get as jest.Mock).mockImplementation(async ({ issue_number }: any) => {
+      mockOctokit.issues.get.mockImplementation(async ({ issue_number }: any) => {
         if (issue_number === 2) {
           throw { status: 404 };
         }
@@ -202,7 +204,7 @@ describe('GitHubClient', () => {
         closed_at: null,
       };
 
-      (mockOctokit.issues.create as jest.Mock).mockResolvedValue({ data: mockCreated } as any);
+      mockOctokit.issues.create.mockResolvedValue({ data: mockCreated } as any);
 
       const issue = await client.createIssue(
         'New Issue',
@@ -240,7 +242,7 @@ describe('GitHubClient', () => {
         closed_at: '2025-01-12T00:00:00Z',
       };
 
-      (mockOctokit.issues.update as jest.Mock).mockResolvedValue({ data: mockUpdated } as any);
+      mockOctokit.issues.update.mockResolvedValue({ data: mockUpdated } as any);
 
       const issue = await client.updateIssue(1, {
         title: 'Updated Title',
@@ -316,7 +318,7 @@ describe('GitHubClient', () => {
 
   describe('verifyAccess', () => {
     it('should return true for successful access', async () => {
-      (mockOctokit.repos.get as jest.Mock).mockResolvedValue({} as any);
+      mockOctokit.repos.get.mockResolvedValue({} as any);
 
       const result = await client.verifyAccess();
 
@@ -328,7 +330,7 @@ describe('GitHubClient', () => {
     });
 
     it('should return false for failed access', async () => {
-      (mockOctokit.repos.get as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
+      mockOctokit.repos.get.mockRejectedValue(new Error('Unauthorized'));
 
       const result = await client.verifyAccess();
 
@@ -338,11 +340,11 @@ describe('GitHubClient', () => {
 
   describe('ensureLabels', () => {
     it('should create missing labels', async () => {
-      (mockOctokit.issues.listLabelsForRepo as jest.Mock).mockResolvedValue({
+      mockOctokit.issues.listLabelsForRepo.mockResolvedValue({
         data: [],
       } as any);
 
-      (mockOctokit.issues.createLabel as jest.Mock).mockResolvedValue({} as any);
+      mockOctokit.issues.createLabel.mockResolvedValue({} as any);
 
       await client.ensureLabels(['priority:high', 'severity:P1']);
 
@@ -362,7 +364,7 @@ describe('GitHubClient', () => {
         ],
       } as any);
 
-      (mockOctokit.issues.updateLabel as jest.Mock).mockResolvedValue({} as any);
+      mockOctokit.issues.updateLabel.mockResolvedValue({} as any);
 
       await client.ensureLabels(['priority:high']);
 
@@ -388,8 +390,8 @@ describe('GitHubClient', () => {
     });
 
     it('should handle label fetch failure gracefully', async () => {
-      (mockOctokit.issues.listLabelsForRepo as jest.Mock).mockRejectedValue(new Error('API Error'));
-      (mockOctokit.issues.createLabel as jest.Mock).mockResolvedValue({} as any);
+      mockOctokit.issues.listLabelsForRepo.mockRejectedValue(new Error('API Error'));
+      mockOctokit.issues.createLabel.mockResolvedValue({} as any);
 
       await client.ensureLabels(['priority:high']);
 
@@ -398,11 +400,11 @@ describe('GitHubClient', () => {
     });
 
     it('should use default colors for unlabeled prefixes', async () => {
-      (mockOctokit.issues.listLabelsForRepo as jest.Mock).mockResolvedValue({
+      mockOctokit.issues.listLabelsForRepo.mockResolvedValue({
         data: [],
       } as any);
 
-      (mockOctokit.issues.createLabel as jest.Mock).mockResolvedValue({} as any);
+      mockOctokit.issues.createLabel.mockResolvedValue({} as any);
 
       await client.ensureLabels(['custom-label']);
 
