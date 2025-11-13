@@ -521,11 +521,15 @@ export class SyncEngine {
         // Build issue body (without frontmatter)
         const issueBody = this.mapper.taskToGitHub(task).body;
 
-        // Build gh command
+        // Write body to temp file to avoid shell escaping issues
+        const tempBodyFile = path.join('/tmp', `gh-body-${task.issueNumber || Date.now()}.txt`);
+        fs.writeFileSync(tempBodyFile, issueBody, 'utf-8');
+
+        // Build gh command using temp file
         let ghCommand = `gh issue create --repo "${this.githubRepo}" --title "${task.frontmatter.title.replace(/"/g, '\\"')}"`;
 
-        // Add body (escape for shell)
-        ghCommand += ` --body "${issueBody.replace(/"/g, '\\"').replace(/\$/g, '\\$')}"`;
+        // Add body from temp file (avoids shell escaping hell)
+        ghCommand += ` --body-file "${tempBodyFile}"`;
 
         // Add labels if any
         if (labels.length > 0) {
@@ -539,6 +543,9 @@ export class SyncEngine {
 
         // Execute gh command and capture output
         const output = execSync(ghCommand, { encoding: 'utf-8' });
+
+        // Clean up temp file
+        fs.unlinkSync(tempBodyFile);
 
         // Parse issue number from output URL (e.g., https://github.com/owner/repo/issues/123)
         const urlMatch = output.match(/https:\/\/github\.com\/.+\/issues\/(\d+)/);
