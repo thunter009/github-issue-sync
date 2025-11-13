@@ -518,11 +518,14 @@ export class SyncEngine {
         // Ensure all labels exist on GitHub before creating issue
         await this.github.ensureLabels(labels);
 
+        // Build issue body (without frontmatter)
+        const issueBody = this.mapper.taskToGitHub(task).body;
+
         // Build gh command
         let ghCommand = `gh issue create --repo "${this.githubRepo}" --title "${task.frontmatter.title.replace(/"/g, '\\"')}"`;
 
-        // Add body from file
-        ghCommand += ` --body "$(cat "${task.filepath}")"`;
+        // Add body (escape for shell)
+        ghCommand += ` --body "${issueBody.replace(/"/g, '\\"').replace(/\$/g, '\\$')}"`;
 
         // Add labels if any
         if (labels.length > 0) {
