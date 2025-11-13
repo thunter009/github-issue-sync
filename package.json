@@ -2,6 +2,7 @@
   "name": "@noticewise/github-issue-sync",
   "version": "1.0.0",
   "description": "Bidirectional sync between local markdown tasks and GitHub issues with conflict resolution",
+  "packageManager": "pnpm@10.22.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -12,7 +13,10 @@
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run clean && npm run build",
-    "test": "echo \"Tests coming soon\" && exit 0"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "prepare": "husky"
   },
   "keywords": [
     "github",
@@ -41,7 +45,11 @@
   "devDependencies": {
     "@types/diff": "^8.0.0",
     "@types/inquirer": "^9.0.9",
+    "@types/jest": "^30.0.0",
     "@types/node": "^22",
+    "husky": "^9.1.7",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.5",
     "typescript": "^5"
   },
   "files": [

@@ -21,17 +21,20 @@ export class SyncEngine {
   private parser: MarkdownParser;
   private mapper: FieldMapper;
   private stateFile: string;
+  private githubRepo: string;
 
   constructor(
     github: GitHubClient,
     parser: MarkdownParser,
     mapper: FieldMapper,
-    projectRoot: string
+    projectRoot: string,
+    githubRepo: string
   ) {
     this.github = github;
     this.parser = parser;
     this.mapper = mapper;
     this.stateFile = path.join(projectRoot, '.sync-state.json');
+    this.githubRepo = githubRepo;
   }
 
   /**
@@ -93,8 +96,9 @@ export class SyncEngine {
         const issue = issues.get(task.issueNumber);
 
         if (!issue) {
-          // Issue doesn't exist on GitHub - push local to GitHub
-          await this.pushTask(task);
+          // Issue doesn't exist on GitHub - sync status before push
+          const updatedTask = await this.ensureStatusSync(task);
+          await this.pushTask(updatedTask);
           result.pushed.push(task.issueNumber);
           continue;
         }
@@ -127,8 +131,9 @@ export class SyncEngine {
         }
 
         if (localChanged) {
-          // Only local changed - push to GitHub
-          await this.pushTask(task, issue);
+          // Only local changed - sync status before push
+          const updatedTask = await this.ensureStatusSync(task);
+          await this.pushTask(updatedTask, issue);
           result.pushed.push(task.issueNumber);
         } else if (remoteChanged) {
           // Only remote changed - pull from GitHub
@@ -158,6 +163,53 @@ export class SyncEngine {
   }
 
   /**
+   * Ensure status field is synced with folder location
+   * Resolves conflicts, fills missing status, updates timestamps
+   */
+  async ensureStatusSync(task: TaskDocument): Promise<TaskDocument> {
+    const resolvedStatus = this.parser.resolveStatusConflict(task);
+
+    // If status needs updating
+    if (task.frontmatter.status !== resolvedStatus) {
+      const updatedFrontmatter = {
+        ...task.frontmatter,
+        status: resolvedStatus,
+        status_last_modified: new Date().toISOString(),
+      };
+
+      const updatedTask = {
+        ...task,
+        frontmatter: updatedFrontmatter,
+      };
+
+      // Write back to file
+      await this.parser.writeTask(updatedTask);
+
+      return updatedTask;
+    }
+
+    // If status missing but matches folder, just add it
+    if (!task.frontmatter.status) {
+      const updatedFrontmatter = {
+        ...task.frontmatter,
+        status: resolvedStatus,
+        status_last_modified: new Date().toISOString(),
+      };
+
+      const updatedTask = {
+        ...task,
+        frontmatter: updatedFrontmatter,
+      };
+
+      await this.parser.writeTask(updatedTask);
+
+      return updatedTask;
+    }
+
+    return task;
+  }
+
+  /**
    * Push local task to GitHub
    */
   async pushTask(task: TaskDocument, existingIssue?: GitHubIssueData): Promise<void> {
@@ -171,19 +223,19 @@ export class SyncEngine {
       await this.github.updateIssue(task.issueNumber, issueData);
       console.log(`✓ Pushed #${task.issueNumber} to GitHub`);
     } else {
-      // Create new issue (this shouldn't happen if issue number exists)
-      console.warn(`Issue #${task.issueNumber} doesn't exist on GitHub - skipping`);
+      // Issue number exists locally but not on GitHub - can't create with specific number
+      console.warn(`Issue #${task.issueNumber} doesn't exist on GitHub - skipping (GitHub auto-assigns numbers)`);
     }
   }
 
   /**
-   * Pull GitHub issue to local task
+   * Pull GitHub issue to local task (updates slug from GitHub title)
    */
   async pullIssue(issue: GitHubIssueData, existingTask: TaskDocument): Promise<void> {
     const { frontmatter, body } = this.mapper.githubToTask(issue, existingTask);
 
     // Update task
-    const updatedTask: TaskDocument = {
+    let updatedTask: TaskDocument = {
       ...existingTask,
       frontmatter: {
         ...existingTask.frontmatter,
@@ -192,9 +244,28 @@ export class SyncEngine {
       body,
     };
 
+    // Always regenerate slug from GitHub title on pull
+    if (frontmatter.title) {
+      try {
+        const newFilepath = await this.parser.renameTask(
+          existingTask.filepath,
+          existingTask.issueNumber,
+          frontmatter.title // Pass GitHub title for slug generation
+        );
+        updatedTask = {
+          ...updatedTask,
+          filepath: newFilepath,
+          filename: path.basename(newFilepath),
+        };
+      } catch (error: any) {
+        // If rename fails (e.g., file already exists), continue without renaming
+        console.warn(`Could not rename ${existingTask.filename}: ${error.message}`);
+      }
+    }
+
     // Move to correct directory if status changed
     const newStatus = frontmatter.status || existingTask.frontmatter.status || 'backlog';
-    const currentStatus = this.getTaskStatus(existingTask.filepath);
+    const currentStatus = this.getTaskStatus(updatedTask.filepath);
 
     if (newStatus !== currentStatus) {
       const movedTask = await this.parser.moveTask(updatedTask, newStatus);
@@ -390,6 +461,10 @@ export class SyncEngine {
 
   /**
    * Create new GitHub issues from local files without issue numbers
+   *
+   * Files are discovered (must not have NNN- prefix), issues created on GitHub,
+   * then files renamed with GitHub-assigned issue number (not manual numbering).
+   * This ensures local files always match GitHub's authoritative issue numbers.
    */
   async createNewIssues(): Promise<{
     created: Array<{ filename: string; issueNumber: number; newFilename: string }>;
@@ -409,12 +484,6 @@ export class SyncEngine {
     }
 
     console.log(`Found ${newTasks.length} new tasks to create on GitHub`);
-
-    // Get GitHub repo from environment
-    const githubRepo = process.env.GITHUB_REPO;
-    if (!githubRepo) {
-      throw new Error('GITHUB_REPO environment variable not set');
-    }
 
     const state = this.loadState();
 
@@ -446,11 +515,21 @@ export class SyncEngine {
           labels.push(`type:${task.frontmatter.type}`);
         }
 
-        // Build gh command
-        let ghCommand = `gh issue create --repo "${githubRepo}" --title "${task.frontmatter.title.replace(/"/g, '\\"')}"`;
+        // Ensure all labels exist on GitHub before creating issue
+        await this.github.ensureLabels(labels);
 
-        // Add body from file
-        ghCommand += ` --body "$(cat "${task.filepath}")"`;
+        // Build issue body (without frontmatter)
+        const issueBody = this.mapper.taskToGitHub(task).body;
+
+        // Write body to temp file to avoid shell escaping issues
+        const tempBodyFile = path.join('/tmp', `gh-body-${task.issueNumber || Date.now()}.txt`);
+        fs.writeFileSync(tempBodyFile, issueBody, 'utf-8');
+
+        // Build gh command using temp file
+        let ghCommand = `gh issue create --repo "${this.githubRepo}" --title "${task.frontmatter.title.replace(/"/g, '\\"')}"`;
+
+        // Add body from temp file (avoids shell escaping hell)
+        ghCommand += ` --body-file "${tempBodyFile}"`;
 
         // Add labels if any
         if (labels.length > 0) {
@@ -465,6 +544,9 @@ export class SyncEngine {
         // Execute gh command and capture output
         const output = execSync(ghCommand, { encoding: 'utf-8' });
 
+        // Clean up temp file
+        fs.unlinkSync(tempBodyFile);
+
         // Parse issue number from output URL (e.g., https://github.com/owner/repo/issues/123)
         const urlMatch = output.match(/https:\/\/github\.com\/.+\/issues\/(\d+)/);
         if (!urlMatch) {
@@ -474,7 +556,7 @@ export class SyncEngine {
         const issueNumber = parseInt(urlMatch[1], 10);
         console.log(`✓ Created issue #${issueNumber}`);
 
-        // Rename the file with the new issue number
+        // Rename file with GitHub-assigned number (always use GitHub's numbering, never manual)
         const newFilepath = await this.parser.renameTask(task.filepath, issueNumber);
         const newFilename = path.basename(newFilepath);
 

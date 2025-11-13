@@ -1,3 +1,15 @@
+---
+created_utc: 2025-01-10T00:00:00.000Z
+title: Create New Issues Feature
+severity: P2
+priority: medium
+type: feature
+component: []
+labels: []
+reporter: thunter009
+status: backlog
+assignee: unassigned
+---
 # Create New Issues Feature
 
 ## Summary
@@ -28,6 +40,7 @@ Currently the sync tool only updates existing GitHub issues. Add capability to c
 ## Technical Details
 
 **Proposed Workflow**:
+
 1. User creates `docs/tasks/backlog/new-feature-name.md`
 2. Runs `github-issue-sync sync --create`
 3. Tool creates issue on GitHub
@@ -35,11 +48,13 @@ Currently the sync tool only updates existing GitHub issues. Add capability to c
 5. Updates frontmatter with GitHub metadata
 
 **Alternative Approach**:
+
 - Use a special prefix like `DRAFT-feature.md`
 - Auto-increment issue numbers locally
 - Interactive prompt for new file handling
 
 **API Considerations**:
+
 - Need to handle rate limits for creation
 - Batch creation might be needed
 - Transaction-like behavior for safety
@@ -49,17 +64,20 @@ Currently the sync tool only updates existing GitHub issues. Add capability to c
 **Decision: Use GitHub CLI (`gh`) instead of direct API**
 
 Benefits:
+
 - Simpler implementation (no direct API code)
 - Automatic auth handling (uses GITHUB_TOKEN)
 - Rate limiting handled by gh
 - Label creation automatic
 
 **Files Modified**:
+
 1. `src/lib/markdown-parser.ts` - Added `discoverNewTasks()` and `renameTask()`
 2. `src/lib/sync-engine.ts` - Added `createNewIssues()` method
 3. `src/cli.ts` - Added `--create` flag and `create` command
 
 **Usage**:
+
 ```bash
 # Create issues from all unnumbered files
 github-issue-sync create
@@ -69,6 +87,7 @@ github-issue-sync sync --create
 ```
 
 **Workflow**:
+
 1. Create file: `docs/tasks/backlog/my-feature.md` (no issue number)
 2. Run: `github-issue-sync create`
 3. Tool executes: `gh issue create --repo "owner/repo" --title "..." --body "$(cat file.md)" --label "..." --assignee "..."`
@@ -77,6 +96,7 @@ github-issue-sync sync --create
 6. Updates sync state
 
 **Testing Required**:
+
 - Unit tests for new methods
 - Integration test with actual GitHub repo
 - Error handling tests (API failures, network issues)

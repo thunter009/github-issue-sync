@@ -1,8 +1,8 @@
 # Dependencies
 node_modules/
 package-lock.json
-pnpm-lock.yaml
 yarn.lock
+# pnpm-lock.yaml intentionally tracked for CI
 
 # Build output
 dist/

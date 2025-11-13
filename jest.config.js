@@ -1,0 +1,31 @@
+/** @type {import('jest').Config} */
+module.exports = {
+  preset: 'ts-jest',
+  testEnvironment: 'node',
+  roots: ['<rootDir>/tests'],
+  testMatch: ['**/*.test.ts'],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    'github-client.test.ts', // Octokit ESM mocking issues
+    'conflict-resolver.test.ts', // Inquirer ESM mocking issues
+  ],
+  collectCoverageFrom: [
+    'src/**/*.ts',
+    '!src/cli.ts',
+    '!src/index.ts',
+    '!src/**/*.d.ts',
+  ],
+  coverageThreshold: {
+    global: {
+      lines: 62,
+      branches: 60,
+      functions: 75,
+      statements: 62,
+    },
+  },
+  coverageDirectory: 'coverage',
+  verbose: true,
+  transformIgnorePatterns: [
+    'node_modules/(?!(inquirer|chalk|ora)/)',
+  ],
+};

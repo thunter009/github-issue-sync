@@ -1,11 +1,15 @@
 ---
 title: npm Registry Publication
-created_utc: 2025-01-10T00:00:00Z
+created_utc: 2025-01-10T00:00:00.000Z
 status: active
 priority: medium
 type: enhancement
+labels: []
+severity: P2
+component: []
+assignee: thunter009
+reporter: thunter009
 ---
-
 # npm Registry Publication
 
 ## Summary
@@ -38,6 +42,7 @@ After test suite completion, publish the package to npm registry as @noticewise/
 **Package Name**: `@noticewise/github-issue-sync`
 
 **Files to Include**:
+
 - dist/ (compiled TypeScript)
 - README.md
 - LICENSE
@@ -45,6 +50,7 @@ After test suite completion, publish the package to npm registry as @noticewise/
 - CHANGELOG.md
 
 **Files to Exclude**:
+
 - src/ (source TypeScript)
 - tests/
 - .env files
@@ -53,6 +59,7 @@ After test suite completion, publish the package to npm registry as @noticewise/
 - docs/ (except maybe quick-reference)
 
 **Verification Commands**:
+
 ```bash
 # Check what will be published
 npm pack --dry-run
@@ -68,4 +75,4 @@ npm publish --tag beta
 npm publish
 ```
 
-**Registry URL**: https://www.npmjs.com/package/@noticewise/github-issue-sync
+**Registry URL**: <https://www.npmjs.com/package/@noticewise/github-issue-sync>

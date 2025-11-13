@@ -14,6 +14,7 @@ export interface TaskFrontmatter {
   labels: string[];
   assignee?: string;
   status?: 'backlog' | 'active' | 'completed';
+  status_last_modified?: string; // ISO timestamp of last status field change
   parent_epic?: string;
   epic_progress?: string;
   commit?: string;
@@ -29,6 +30,7 @@ export interface TaskDocument {
   frontmatter: TaskFrontmatter;
   body: string;
   lastModified: Date;
+  folderLastModified: Date; // Parent directory modification time
 }
 
 export interface GitHubIssueData {

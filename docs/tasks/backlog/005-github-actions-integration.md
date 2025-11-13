@@ -1,3 +1,15 @@
+---
+created_utc: 2025-01-10T00:00:00.000Z
+title: GitHub Actions Integration
+severity: P2
+priority: medium
+type: enhancement
+component: []
+labels: []
+reporter: thom
+status: backlog
+assignee: unassigned
+---
 # GitHub Actions Integration
 
 ## Summary
@@ -31,10 +43,12 @@ Set up GitHub Actions workflows for automated testing, building, and potentially
 **Workflows Location**: `.github/workflows/`
 
 **Secrets Needed**:
+
 - `NPM_TOKEN` - Automation token for publishing
 - Coverage reporting service token (if using)
 
 **Example Test Workflow Structure**:
+
 ```yaml
 name: Test
 on: [push, pull_request]
@@ -47,5 +61,6 @@ jobs:
 ```
 
 **Branch Protection**:
+
 - main branch should be protected
 - Require CI to pass before merge

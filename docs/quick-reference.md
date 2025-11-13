@@ -4,11 +4,11 @@
 
 ### Development
 ```bash
-npm run build      # Compile TypeScript
-npm run dev        # Watch mode
-npm run clean      # Remove dist/
-npm link           # Install globally for testing
-npm unlink         # Remove global link
+pnpm run build      # Compile TypeScript
+pnpm run dev        # Watch mode
+pnpm run clean      # Remove dist/
+pnpm link --global  # Install globally for testing
+pnpm unlink --global # Remove global link
 ```
 
 ### Sync Commands

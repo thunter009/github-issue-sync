@@ -24,8 +24,8 @@ export class FieldMapper {
 
     // Combine all labels
     const labels = [
-      ...frontmatter.labels,
-      ...frontmatter.component.map((c) => `component:${c}`),
+      ...(Array.isArray(frontmatter.labels) ? frontmatter.labels : []),
+      ...(Array.isArray(frontmatter.component) ? frontmatter.component.map((c) => `component:${c}`) : []),
       `priority:${frontmatter.priority}`,
       `severity:${frontmatter.severity}`,
     ];
@@ -38,8 +38,9 @@ export class FieldMapper {
       labels.push(`status:${frontmatter.status}`);
     }
 
-    // Determine state
-    const state = frontmatter.status === 'completed' ? 'closed' : 'open';
+    // Determine state from folder location (not status field)
+    // completed/ folder → closed, others → open
+    const state = task.filepath.includes('/completed/') ? 'closed' : 'open';
 
     // Map assignee to GitHub username
     let assignee: string | undefined = undefined;

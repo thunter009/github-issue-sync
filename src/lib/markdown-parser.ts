@@ -70,6 +70,8 @@ export class MarkdownParser {
     }
 
     const stats = fs.statSync(filepath);
+    const dirPath = path.dirname(filepath);
+    const dirStats = fs.statSync(dirPath);
 
     return {
       issueNumber,
@@ -78,6 +80,7 @@ export class MarkdownParser {
       frontmatter: data as TaskFrontmatter,
       body: body.trim(),
       lastModified: stats.mtime,
+      folderLastModified: dirStats.mtime,
     };
   }
 
@@ -113,6 +116,9 @@ export class MarkdownParser {
       throw new Error(`Task file already exists: ${filepath}`);
     }
 
+    const dirPath = path.dirname(filepath);
+    const dirStats = fs.statSync(dirPath);
+
     const task: TaskDocument = {
       issueNumber,
       filename,
@@ -120,6 +126,7 @@ export class MarkdownParser {
       frontmatter,
       body: body.trim(),
       lastModified: new Date(),
+      folderLastModified: dirStats.mtime,
     };
 
     await this.writeTask(task);
@@ -148,6 +155,47 @@ export class MarkdownParser {
       ...task,
       filepath: newFilepath,
     };
+  }
+
+  /**
+   * Resolve status conflicts between frontmatter and folder location
+   * Returns the winning status based on modification times
+   */
+  resolveStatusConflict(task: TaskDocument): 'backlog' | 'active' | 'completed' {
+    const folderStatus = this.getStatusFromPath(task.filepath);
+    const frontmatterStatus = task.frontmatter.status;
+
+    // If frontmatter missing, use folder
+    if (!frontmatterStatus) {
+      return folderStatus;
+    }
+
+    // If they agree, no conflict
+    if (frontmatterStatus === folderStatus) {
+      return frontmatterStatus;
+    }
+
+    // Conflict detected - compare timestamps
+    const statusTimestamp = task.frontmatter.status_last_modified
+      ? new Date(task.frontmatter.status_last_modified)
+      : new Date(0); // If missing, folder wins
+
+    // Most recent change wins
+    if (task.folderLastModified > statusTimestamp) {
+      return folderStatus;
+    } else {
+      return frontmatterStatus;
+    }
+  }
+
+  /**
+   * Get status from filepath
+   */
+  private getStatusFromPath(filepath: string): 'backlog' | 'active' | 'completed' {
+    if (filepath.includes('/backlog/')) return 'backlog';
+    if (filepath.includes('/active/')) return 'active';
+    if (filepath.includes('/completed/')) return 'completed';
+    return 'backlog';
   }
 
   /**
@@ -244,28 +292,38 @@ export class MarkdownParser {
   }
 
   /**
-   * Rename task file with new issue number
+   * Rename task file with new issue number and optionally new title
    */
-  async renameTask(oldFilepath: string, issueNumber: number): Promise<string> {
+  async renameTask(oldFilepath: string, issueNumber: number, newTitle?: string): Promise<string> {
     const dir = path.dirname(oldFilepath);
     const oldFilename = path.basename(oldFilepath);
 
     // Generate new filename with issue number
     let slug: string;
 
-    // Try to preserve existing slug if it looks reasonable
-    const slugMatch = oldFilename.match(/^(?:\d+-)?(.+)\.md$/);
-    if (slugMatch) {
-      slug = slugMatch[1];
+    if (newTitle) {
+      // Use provided title to generate slug (e.g., from GitHub)
+      slug = this.generateSlug(newTitle);
     } else {
-      // Fall back to generating from title
-      const content = fs.readFileSync(oldFilepath, 'utf-8');
-      const { data } = matter(content);
-      slug = this.generateSlug(data.title || 'untitled');
+      // Try to preserve existing slug if it looks reasonable
+      const slugMatch = oldFilename.match(/^(?:\d+-)?(.+)\.md$/);
+      if (slugMatch) {
+        slug = slugMatch[1];
+      } else {
+        // Fall back to generating from title
+        const content = fs.readFileSync(oldFilepath, 'utf-8');
+        const { data } = matter(content);
+        slug = this.generateSlug(data.title || 'untitled');
+      }
     }
 
     const newFilename = `${String(issueNumber).padStart(3, '0')}-${slug}.md`;
     const newFilepath = path.join(dir, newFilename);
+
+    // If filename is already correct, no need to rename
+    if (oldFilepath === newFilepath) {
+      return oldFilepath;
+    }
 
     // Check if target file already exists
     if (fs.existsSync(newFilepath)) {
