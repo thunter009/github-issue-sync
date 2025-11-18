@@ -866,7 +866,13 @@ export class SyncEngine {
           components.forEach((c) => labels.push(`component:${c}`));
         }
         if (task.frontmatter.labels) {
-          labels.push(...task.frontmatter.labels);
+          // Filter out non-conforming labels (must be key:value format)
+          const validLabels = task.frontmatter.labels.filter(label =>
+            label.includes(':') &&
+            label.indexOf(':') > 0 &&
+            label.indexOf(':') < label.length - 1
+          );
+          labels.push(...validLabels);
         }
         if (task.frontmatter.type) {
           labels.push(`type:${task.frontmatter.type}`);

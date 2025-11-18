@@ -3,12 +3,48 @@
  */
 
 import { TaskDocument, TaskFrontmatter, GitHubIssueData } from './types';
+import chalk from 'chalk';
 
 export class FieldMapper {
   // Map local assignee names to GitHub usernames
   private readonly assigneeMap: Record<string, string> = {
     thom: 'thunter009',
   };
+
+  // Track which invalid labels we've already warned about
+  private invalidLabelsWarned = new Set<string>();
+
+  /**
+   * Validate if a label follows the key:value format
+   */
+  private isValidLabel(label: string): boolean {
+    // Must contain a colon, but not at the start or end
+    return label.includes(':') &&
+           label.indexOf(':') > 0 &&
+           label.indexOf(':') < label.length - 1;
+  }
+
+  /**
+   * Filter and warn about invalid labels
+   */
+  private filterInvalidLabels(labels: string[], context: string): string[] {
+    const valid: string[] = [];
+    const invalid: string[] = [];
+
+    for (const label of labels) {
+      if (this.isValidLabel(label)) {
+        valid.push(label);
+      } else {
+        invalid.push(label);
+        if (!this.invalidLabelsWarned.has(label)) {
+          this.invalidLabelsWarned.add(label);
+          console.warn(chalk.yellow(`⚠ Removing invalid label "${label}" (must be in key:value format) from ${context}`));
+        }
+      }
+    }
+
+    return valid;
+  }
 
   /**
    * Convert task document to GitHub issue format
@@ -22,9 +58,13 @@ export class FieldMapper {
   } {
     const { frontmatter, body } = task;
 
-    // Combine all labels
+    // Filter out non-conforming labels from frontmatter.labels
+    const validLabels = Array.isArray(frontmatter.labels)
+      ? this.filterInvalidLabels(frontmatter.labels, `task ${task.filename}`)
+      : [];
+
     const labels = [
-      ...(Array.isArray(frontmatter.labels) ? frontmatter.labels : []),
+      ...validLabels,
       ...(Array.isArray(frontmatter.component) ? frontmatter.component.map((c) => `component:${c}`) : []),
       `priority:${frontmatter.priority}`,
       `severity:${frontmatter.severity}`,
@@ -214,7 +254,13 @@ export class FieldMapper {
       } else if (label.startsWith('status:')) {
         result.status = label.replace('status:', '') as TaskFrontmatter['status'];
       } else {
-        result.labels.push(label);
+        // Only keep labels in key:value format
+        if (this.isValidLabel(label)) {
+          result.labels.push(label);
+        } else if (!this.invalidLabelsWarned.has(label)) {
+          this.invalidLabelsWarned.add(label);
+          console.warn(chalk.yellow(`⚠ Removing invalid label "${label}" from GitHub (must be in key:value format)`));
+        }
       }
     }
 

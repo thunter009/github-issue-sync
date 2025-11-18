@@ -1,16 +1,16 @@
 ---
-created_utc: "2025-11-13T00:00:00.000Z"
-reporter: "thunter009"
-title: "Support running CLI from any directory"
-severity: "P2"
-priority: "medium"
-type: "bug"
-component: ["cli"]
-labels: ["bug", "usability"]
-status: "backlog"
-assignee:
+created_utc: '2025-11-13T00:00:00.000Z'
+reporter: thunter009
+title: Support running CLI from any directory
+severity: P2
+priority: medium
+type: bug
+component:
+  - cli
+labels:
+  - 'test:label'
+status: backlog
 ---
-
 # Support running CLI from any directory
 
 ## Summary
