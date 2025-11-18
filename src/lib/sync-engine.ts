@@ -296,7 +296,7 @@ export class SyncEngine {
       const uniqueOrphanedNumbers = Array.from(orphanedTasksByNumber.keys());
 
       console.warn(
-        chalk.yellow(`\n⚠ Warning: Found ${uniqueOrphanedNumbers.length} orphaned issue(s) with deleted GitHub issues:`)
+        chalk.yellow(`\n⚠ Warning: Found ${uniqueOrphanedNumbers.length} numbered file(s) without GitHub issues:`)
       );
       uniqueOrphanedNumbers.forEach((num) => {
         const matchingTasks = orphanedTasksByNumber.get(num) || [];
@@ -311,10 +311,10 @@ export class SyncEngine {
         }
       });
       console.log(
-        chalk.gray('\nThese files reference GitHub issues that no longer exist (deleted).')
+        chalk.gray('\nThese files have issue numbers but no corresponding GitHub issues.')
       );
       console.log(
-        chalk.gray('They will be skipped during sync. Use sync --clean to remove them.')
+        chalk.gray('They will be skipped during sync. Use "sync --create" to rename and create as new issues.')
       );
       console.log('');
     }
@@ -761,6 +761,59 @@ export class SyncEngine {
   }
 
   /**
+   * Rename numbered files that don't have corresponding GitHub issues.
+   * These files likely had numbers manually assigned but were never synced.
+   * Removes the number prefix so they can be created as new issues.
+   */
+  private async renameOrphanedNumberedFiles(): Promise<void> {
+    const allTasks = await this.parser.discoverTasks();
+
+    if (allTasks.length === 0) {
+      return;
+    }
+
+    // Get all issue numbers from discovered tasks
+    const issueNumbers = allTasks.map(t => t.issueNumber);
+
+    // Check which issues actually exist on GitHub
+    const existingIssues = await this.github.getIssues(issueNumbers);
+
+    // Find tasks with numbers that don't exist on GitHub
+    const orphanedTasks = allTasks.filter(task => !existingIssues.has(task.issueNumber));
+
+    if (orphanedTasks.length === 0) {
+      return;
+    }
+
+    console.log(chalk.yellow(`\nFound ${orphanedTasks.length} numbered file(s) without GitHub issues.`));
+    console.log(chalk.yellow('These will be renamed to remove numbers and treated as new issues.\n'));
+
+    for (const task of orphanedTasks) {
+      const oldPath = task.filepath;
+      const oldFilename = task.filename;
+
+      // Remove the number prefix (e.g., "011-foo.md" -> "foo.md")
+      const newFilename = oldFilename.replace(/^\d+-/, '');
+      const newPath = path.join(path.dirname(oldPath), newFilename);
+
+      // Check if target filename already exists
+      if (fs.existsSync(newPath)) {
+        console.log(chalk.red(`  ✗ Cannot rename ${oldFilename} -> ${newFilename} (file already exists)`));
+        continue;
+      }
+
+      try {
+        fs.renameSync(oldPath, newPath);
+        console.log(chalk.green(`  ✓ Renamed ${oldFilename} -> ${newFilename}`));
+      } catch (error: any) {
+        console.log(chalk.red(`  ✗ Failed to rename ${oldFilename}: ${error.message}`));
+      }
+    }
+
+    console.log(); // Empty line for spacing
+  }
+
+  /**
    * Create new GitHub issues from local files without issue numbers
    *
    * Files are discovered (must not have NNN- prefix), issues created on GitHub,
@@ -775,6 +828,9 @@ export class SyncEngine {
       created: [] as Array<{ filename: string; issueNumber: number; newFilename: string }>,
       errors: [] as Array<{ filename: string; error: string }>,
     };
+
+    // First, handle numbered files that don't have GitHub issues
+    await this.renameOrphanedNumberedFiles();
 
     // Discover files without issue numbers
     const newTasks = await this.parser.discoverNewTasks();

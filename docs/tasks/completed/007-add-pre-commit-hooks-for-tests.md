@@ -1,5 +1,5 @@
 ---
-created_utc: 2025-01-13T00:00:00Z
+created_utc: 2025-01-13T00:00:00.000Z
 title: Add Pre-Commit Hooks for Tests
 severity: P3
 priority: low
@@ -10,8 +10,8 @@ labels:
   - quality
 reporter: thom
 status: completed
+completed_utc: '2025-11-18T00:44:50Z'
 ---
-
 # Add Pre-Commit Hooks for Tests
 
 ## Summary

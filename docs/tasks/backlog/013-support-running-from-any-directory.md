@@ -8,7 +8,7 @@ type: "bug"
 component: ["cli"]
 labels: ["bug", "usability"]
 status: "backlog"
-assignee: "unassigned"
+assignee:
 ---
 
 # Support running CLI from any directory
