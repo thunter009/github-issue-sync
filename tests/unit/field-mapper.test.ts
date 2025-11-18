@@ -95,6 +95,34 @@ describe('FieldMapper', () => {
       expect(result.assignee).toBeUndefined();
     });
 
+    it('should filter out invalid assignee values', () => {
+      const invalidValues = ['completed', 'active', 'backlog', 'none', '', 'UNASSIGNED'];
+
+      invalidValues.forEach(value => {
+        const task: TaskDocument = {
+          issueNumber: 3,
+          filename: '003-task.md',
+          filepath: '/path/to/active/003-task.md',
+          lastModified: new Date(),
+          folderLastModified: new Date(),
+          frontmatter: {
+            created_utc: '2025-01-10T00:00:00Z',
+            reporter: 'thom',
+            title: 'Task',
+            severity: 'P2',
+            priority: 'medium',
+            component: [],
+            labels: [],
+            assignee: value,
+          },
+          body: 'Content',
+        };
+
+        const result = mapper.taskToGitHub(task);
+        expect(result.assignee).toBeUndefined();
+      });
+    });
+
     it('should remove duplicate labels', () => {
       const task: TaskDocument = {
         issueNumber: 4,
@@ -228,7 +256,7 @@ describe('FieldMapper', () => {
       expect(result.frontmatter.priority).toBe('medium');
       expect(result.frontmatter.severity).toBe('P2');
       expect(result.frontmatter.component).toEqual([]);
-      expect(result.frontmatter.assignee).toBe('unassigned');
+      expect(result.frontmatter.assignee).toBeUndefined(); // No assignee = undefined, not 'unassigned'
       expect(result.frontmatter.reporter).toBe('System');
       expect(result.body).toBe('');
     });

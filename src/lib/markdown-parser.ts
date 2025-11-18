@@ -5,7 +5,7 @@
 import fs from 'fs';
 import path from 'path';
 import matter from 'gray-matter';
-import { TaskDocument, TaskFrontmatter } from './types';
+import { TaskDocument, TaskFrontmatter, SyncFilter } from './types';
 
 export class MarkdownParser {
   private tasksDir: string;
@@ -17,8 +17,34 @@ export class MarkdownParser {
   /**
    * Discover all task markdown files
    */
-  async discoverTasks(): Promise<TaskDocument[]> {
+  async discoverTasks(filter?: SyncFilter): Promise<TaskDocument[]> {
     const tasks: TaskDocument[] = [];
+
+    // If filtering by filepath, try to load that specific file
+    if (filter?.filepath) {
+      // Check if file exists
+      if (!fs.existsSync(filter.filepath)) {
+        throw new Error(`File not found: ${filter.filepath}`);
+      }
+
+      // Extract issue number from filename
+      const filename = path.basename(filter.filepath);
+      const match = filename.match(/^(\d+)-/);
+      if (!match) {
+        throw new Error(`File does not have issue number in name: ${filename}`);
+      }
+
+      const issueNumber = parseInt(match[1], 10);
+
+      try {
+        const task = await this.parseTask(filter.filepath, issueNumber);
+        tasks.push(task);
+      } catch (error: any) {
+        throw new Error(`Failed to parse ${filter.filepath}: ${error.message}`);
+      }
+
+      return tasks;
+    }
 
     const subdirs = ['backlog', 'active', 'completed'];
 
@@ -44,6 +70,11 @@ export class MarkdownParser {
 
         const issueNumber = parseInt(match[1], 10);
         const filepath = path.join(dirPath, file);
+
+        // Apply issue number filter if specified
+        if (filter?.issueNumber && filter.issueNumber !== issueNumber) {
+          continue;
+        }
 
         try {
           const task = await this.parseTask(filepath, issueNumber);

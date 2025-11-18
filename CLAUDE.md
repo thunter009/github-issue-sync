@@ -18,10 +18,23 @@ pnpm run clean    # Remove dist/ directory
 pnpm link --global  # Install globally for testing
 github-issue-sync sync    # Test full sync
 github-issue-sync status  # Dry run to see what would change
+github-issue-sync sync --clean  # Clean up orphaned files (deleted GitHub issues)
+github-issue-sync sync --create # Create new issues from unnumbered files
+
+# Single file/issue sync (NEW)
+github-issue-sync sync --file docs/tasks/active/002-feature.md  # Sync specific file
+github-issue-sync sync --issue 123  # Sync specific issue
+github-issue-sync pull --issue 789  # Pull issue from GitHub (creates file if needed)
+github-issue-sync push --file docs/tasks/backlog/456-bug.md  # Push file to GitHub
 
 # Required environment variables
 GITHUB_TOKEN=<token>      # GitHub PAT with repo scope
 GITHUB_REPO=owner/repo    # Repository format
+
+# Pre-commit hooks
+# Tests run automatically before commits
+git commit --no-verify    # Bypass if needed
+HUSKY=0 git commit -m "message"  # Disable hooks entirely
 ```
 
 ## Architecture

@@ -95,8 +95,8 @@ export class GitHubClient {
         closed_at: data.closed_at || null,
       };
     } catch (error: any) {
-      if (error.status === 404) {
-        return null; // Issue doesn't exist
+      if (error.status === 404 || error.status === 410) {
+        return null; // Issue doesn't exist (404) or was deleted (410)
       }
       throw error;
     }

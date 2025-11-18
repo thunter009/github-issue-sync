@@ -116,12 +116,43 @@ github-issue-sync sync
 - Choose: use local, use remote, or skip
 - Handles multiple conflicts with "skip all" option
 
+**Orphaned files (deleted GitHub issues):**
+- Local files referencing deleted GitHub issues are automatically detected and skipped
+- Warning shown with list of orphaned files
+- Use `sync --clean` to interactively remove orphaned files
+
+**Options:**
+- `--create` - Create new GitHub issues from files without issue numbers
+- `--clean` - Interactively clean up orphaned local files where GitHub issues were deleted
+- `--file <path>` - Sync only the specified file
+- `--issue <number>` - Sync only the specified issue number
+
+```bash
+# Create new issues and sync
+github-issue-sync sync --create
+
+# Clean up orphaned files
+github-issue-sync sync --clean
+
+# Sync a single file
+github-issue-sync sync --file docs/tasks/active/002-feature.md
+
+# Sync a single issue (creates local file if doesn't exist)
+github-issue-sync sync --issue 123
+```
+
 ### `status`
 
 Dry-run that shows what would change without syncing.
 
 ```bash
 github-issue-sync status
+
+# Check status of a single file
+github-issue-sync status --file docs/tasks/active/002-feature.md
+
+# Check status of a single issue
+github-issue-sync status --issue 123
 ```
 
 ### `push`
@@ -130,6 +161,12 @@ One-way sync: local → GitHub (overwrites GitHub).
 
 ```bash
 github-issue-sync push
+
+# Push a single file to GitHub
+github-issue-sync push --file docs/tasks/active/002-feature.md
+
+# Push a single issue to GitHub
+github-issue-sync push --issue 123
 ```
 
 ### `pull`
@@ -138,6 +175,12 @@ One-way sync: GitHub → local (overwrites local).
 
 ```bash
 github-issue-sync pull
+
+# Pull a single file from GitHub
+github-issue-sync pull --file docs/tasks/active/002-feature.md
+
+# Pull a single issue from GitHub (creates local file if doesn't exist)
+github-issue-sync pull --issue 123
 ```
 
 ## Label Colors
@@ -270,6 +313,20 @@ npm run build
 
 # Test locally with npm link
 npm link
+```
+
+### Pre-Commit Hooks
+
+Tests automatically run before each commit via husky + lint-staged. Only tests related to changed files are executed for faster feedback. To bypass:
+
+```bash
+git commit --no-verify  # Skip pre-commit hook
+```
+
+To disable hooks entirely, set `HUSKY=0`:
+
+```bash
+HUSKY=0 git commit -m "message"
 ```
 
 ## License

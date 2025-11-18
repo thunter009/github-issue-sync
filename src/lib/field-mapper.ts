@@ -43,8 +43,10 @@ export class FieldMapper {
     const state = task.filepath.includes('/completed/') ? 'closed' : 'open';
 
     // Map assignee to GitHub username
+    // Filter out placeholder values that aren't real usernames
+    const invalidAssignees = ['unassigned', 'completed', 'active', 'backlog', 'none', ''];
     let assignee: string | undefined = undefined;
-    if (frontmatter.assignee && frontmatter.assignee !== 'unassigned') {
+    if (frontmatter.assignee && !invalidAssignees.includes(frontmatter.assignee.toLowerCase())) {
       assignee = this.assigneeMap[frontmatter.assignee] || frontmatter.assignee;
     }
 
@@ -76,7 +78,7 @@ export class FieldMapper {
       priority: priority || 'medium',
       severity: severity || 'P2',
       component: component,
-      assignee: issue.assignee || 'unassigned',
+      assignee: issue.assignee || undefined, // Don't save 'unassigned', leave undefined
       created_utc: existingTask?.frontmatter.created_utc || issue.created_at,
       reporter: existingTask?.frontmatter.reporter || 'System',
     };
