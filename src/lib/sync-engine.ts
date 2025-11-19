@@ -881,15 +881,15 @@ export class SyncEngine {
         // Ensure all labels exist on GitHub before creating issue
         await this.github.ensureLabels(labels);
 
-        // Build issue body (without frontmatter)
-        const issueBody = this.mapper.taskToGitHub(task).body;
+        // Get GitHub-formatted issue data from mapper (includes cleaned title)
+        const githubData = this.mapper.taskToGitHub(task);
 
         // Write body to temp file to avoid shell escaping issues
         const tempBodyFile = path.join('/tmp', `gh-body-${task.issueNumber || Date.now()}.txt`);
-        fs.writeFileSync(tempBodyFile, issueBody, 'utf-8');
+        fs.writeFileSync(tempBodyFile, githubData.body, 'utf-8');
 
-        // Build gh command using temp file
-        let ghCommand = `gh issue create --repo "${this.githubRepo}" --title "${task.frontmatter.title.replace(/"/g, '\\"')}"`;
+        // Build gh command using temp file and cleaned title from mapper
+        let ghCommand = `gh issue create --repo "${this.githubRepo}" --title "${githubData.title.replace(/"/g, '\\"')}"`;
 
         // Add body from temp file (avoids shell escaping hell)
         ghCommand += ` --body-file "${tempBodyFile}"`;

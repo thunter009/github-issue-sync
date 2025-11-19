@@ -54,7 +54,10 @@ const IGNORED_DIRS_ENV = process.env.SYNC_IGNORE_DIRS?.split(',').map(d => d.tri
 /**
  * Initialize sync components
  */
-function initializeSync(ignoredDirs: string[] = []): {
+function initializeSync(
+  ignoredDirs: string[] = [],
+  keepTitlePrefixes: boolean = false
+): {
   github: GitHubClient;
   parser: MarkdownParser;
   mapper: FieldMapper;
@@ -79,7 +82,7 @@ function initializeSync(ignoredDirs: string[] = []): {
 
   const github = new GitHubClient(GITHUB_TOKEN, GITHUB_REPO);
   const parser = new MarkdownParser(PROJECT_ROOT, ignoredDirs);
-  const mapper = new FieldMapper();
+  const mapper = new FieldMapper({ keepTitlePrefixes });
   const engine = new SyncEngine(github, parser, mapper, PROJECT_ROOT, GITHUB_REPO);
   const resolver = new ConflictResolver(mapper);
 
@@ -171,6 +174,7 @@ program
   .option('--file <path>', 'Sync only the specified file')
   .option('--issue <number>', 'Sync only the specified issue number', parseInt)
   .option('--ignore-dir <dirs...>', 'Directories to ignore (e.g., completed active)')
+  .option('--keep-title-prefixes', 'Keep [#NNN] prefixes in GitHub issue titles')
   .action(async (options) => {
     // Combine ignored directories from environment and CLI
     const ignoredDirs = [...IGNORED_DIRS_ENV, ...(options.ignoreDir || [])];
@@ -178,7 +182,7 @@ program
       console.log(chalk.gray(`Ignoring directories: ${ignoredDirs.join(', ')}`));
     }
 
-    const { github, engine, resolver } = initializeSync(ignoredDirs);
+    const { github, engine, resolver } = initializeSync(ignoredDirs, options.keepTitlePrefixes);
 
     await verifyAccess(github);
 
@@ -313,9 +317,10 @@ program
   .option('--file <path>', 'Push only the specified file')
   .option('--issue <number>', 'Push only the specified issue number', parseInt)
   .option('--ignore-dir <dirs...>', 'Directories to ignore (e.g., completed active)')
+  .option('--keep-title-prefixes', 'Keep [#NNN] prefixes in GitHub issue titles')
   .action(async (options) => {
     const ignoredDirs = [...IGNORED_DIRS_ENV, ...(options.ignoreDir || [])];
-    const { github, engine } = initializeSync(ignoredDirs);
+    const { github, engine } = initializeSync(ignoredDirs, options.keepTitlePrefixes);
 
     await verifyAccess(github);
 

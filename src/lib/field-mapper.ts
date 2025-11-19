@@ -14,6 +14,13 @@ export class FieldMapper {
   // Track which invalid labels we've already warned about
   private invalidLabelsWarned = new Set<string>();
 
+  // Configuration options
+  private readonly keepTitlePrefixes: boolean;
+
+  constructor(options: { keepTitlePrefixes?: boolean } = {}) {
+    this.keepTitlePrefixes = options.keepTitlePrefixes ?? false;
+  }
+
   /**
    * Validate if a label follows the key:value format
    */
@@ -44,6 +51,13 @@ export class FieldMapper {
     }
 
     return valid;
+  }
+
+  /**
+   * Clean title by removing issue number prefix like [#011]
+   */
+  private cleanTitle(title: string): string {
+    return title.replace(/^\[#\d+\]\s*/, '').trim();
   }
 
   /**
@@ -90,8 +104,13 @@ export class FieldMapper {
       assignee = this.assigneeMap[frontmatter.assignee] || frontmatter.assignee;
     }
 
+    // Clean title unless keepTitlePrefixes flag is set
+    const title = this.keepTitlePrefixes
+      ? frontmatter.title
+      : this.cleanTitle(frontmatter.title);
+
     return {
-      title: frontmatter.title,
+      title,
       body: this.buildIssueBody(frontmatter, body),
       labels: [...new Set(labels)], // Remove duplicates
       assignee,
@@ -284,10 +303,17 @@ export class FieldMapper {
 
   /**
    * Generate hash for task document
+   * Uses normalized representation (cleaned title) to match GitHub
    */
   hashTask(task: TaskDocument): string {
+    // Normalize frontmatter title to match what we send to GitHub
+    const normalizedFrontmatter = {
+      ...task.frontmatter,
+      title: this.keepTitlePrefixes ? task.frontmatter.title : this.cleanTitle(task.frontmatter.title),
+    };
+
     const content = JSON.stringify({
-      frontmatter: task.frontmatter,
+      frontmatter: normalizedFrontmatter,
       body: task.body,
     });
     return this.generateHash(content);
