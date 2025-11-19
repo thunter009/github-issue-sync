@@ -24,7 +24,7 @@ describe('FieldMapper', () => {
           priority: 'high',
           type: 'feature',
           component: ['auth', 'api'],
-          labels: ['needs-review'],
+          labels: ['review:needed'],
           assignee: 'thom',
           status: 'active',
         },
@@ -36,7 +36,7 @@ describe('FieldMapper', () => {
       expect(result.title).toBe('Test Task');
       expect(result.state).toBe('open');
       expect(result.assignee).toBe('thunter009'); // Mapped username
-      expect(result.labels).toContain('needs-review');
+      expect(result.labels).toContain('review:needed');
       expect(result.labels).toContain('component:auth');
       expect(result.labels).toContain('component:api');
       expect(result.labels).toContain('priority:high');
@@ -137,13 +137,13 @@ describe('FieldMapper', () => {
           severity: 'P2',
           priority: 'high',
           component: [],
-          labels: ['bug', 'bug'], // Duplicate
+          labels: ['type:bug', 'type:bug'], // Duplicate
         },
         body: 'Content',
       };
 
       const result = mapper.taskToGitHub(task);
-      const bugLabels = result.labels.filter(l => l === 'bug');
+      const bugLabels = result.labels.filter(l => l === 'type:bug');
       expect(bugLabels.length).toBe(1);
     });
   });
@@ -155,7 +155,7 @@ describe('FieldMapper', () => {
         title: 'GitHub Issue',
         body: 'Issue body',
         state: 'open',
-        labels: ['priority:high', 'severity:P1', 'component:ui', 'type:bug', 'needs-triage'],
+        labels: ['priority:high', 'severity:P1', 'component:ui', 'type:bug', 'triage:needed'],
         assignee: 'john',
         created_at: '2025-01-10T00:00:00Z',
         updated_at: '2025-01-11T00:00:00Z',
@@ -169,7 +169,7 @@ describe('FieldMapper', () => {
       expect(result.frontmatter.severity).toBe('P1');
       expect(result.frontmatter.component).toEqual(['ui']);
       expect(result.frontmatter.type).toBe('bug');
-      expect(result.frontmatter.labels).toEqual(['needs-triage']);
+      expect(result.frontmatter.labels).toEqual(['triage:needed']);
       expect(result.frontmatter.assignee).toBe('john');
       expect(result.body).toBe('Issue body');
     });
@@ -272,8 +272,8 @@ describe('FieldMapper', () => {
         'component:auth',
         'component:api',
         'status:active',
-        'needs-review',
-        'urgent',
+        'review:needed',
+        'priority:urgent',
       ];
 
       const result = (mapper as any).parseLabels(labels);
@@ -283,7 +283,7 @@ describe('FieldMapper', () => {
       expect(result.type).toBe('bug');
       expect(result.component).toEqual(['auth', 'api']);
       expect(result.status).toBe('active');
-      expect(result.labels).toEqual(['needs-review', 'urgent']);
+      expect(result.labels).toEqual(['review:needed', 'priority:urgent']);
     });
   });
 
