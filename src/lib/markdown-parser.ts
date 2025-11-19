@@ -5,6 +5,7 @@
 import fs from 'fs';
 import path from 'path';
 import matter from 'gray-matter';
+import chalk from 'chalk';
 import { TaskDocument, TaskFrontmatter, SyncFilter } from './types';
 
 export class MarkdownParser {
@@ -19,6 +20,7 @@ export class MarkdownParser {
    */
   async discoverTasks(filter?: SyncFilter): Promise<TaskDocument[]> {
     const tasks: TaskDocument[] = [];
+    let errorCount = 0;
 
     // If filtering by filepath, try to load that specific file
     if (filter?.filepath) {
@@ -80,9 +82,20 @@ export class MarkdownParser {
           const task = await this.parseTask(filepath, issueNumber);
           tasks.push(task);
         } catch (error: any) {
-          console.warn(`Warning: Failed to parse ${filepath}: ${error.message}`);
+          errorCount++;
+          // For detailed validation errors, just print the error message
+          if (error.message.includes('❌')) {
+            console.warn(error.message);
+          } else {
+            console.warn(`Warning: Failed to parse ${filepath}: ${error.message}`);
+          }
         }
       }
+    }
+
+    // Show summary if there were errors
+    if (errorCount > 0) {
+      console.warn(chalk.yellow(`\n⚠️  ${errorCount} file(s) failed validation. Fix the frontmatter to sync these files.\n`));
     }
 
     return tasks;
@@ -95,9 +108,58 @@ export class MarkdownParser {
     const content = fs.readFileSync(filepath, 'utf-8');
     const { data, content: body } = matter(content);
 
-    // Validate frontmatter
-    if (!data.title || !data.created_utc) {
-      throw new Error(`Missing required frontmatter fields in ${filepath}`);
+    // Validate required frontmatter fields
+    const requiredFields = {
+      title: 'string',
+      created_utc: 'string',
+      reporter: 'string',
+      severity: 'string (P0|P1|P2|P3)',
+      priority: 'string (blocker|critical|high|medium|low)',
+      component: 'array',
+      labels: 'array'
+    };
+
+    const missingFields: string[] = [];
+    const invalidFields: string[] = [];
+
+    for (const [field, type] of Object.entries(requiredFields)) {
+      if (data[field] === undefined || data[field] === null) {
+        missingFields.push(`${field} (${type})`);
+      } else if (type === 'array' && !Array.isArray(data[field])) {
+        invalidFields.push(`${field} should be array, got ${typeof data[field]}`);
+      }
+    }
+
+    // Check severity values
+    if (data.severity && !['P0', 'P1', 'P2', 'P3'].includes(data.severity)) {
+      invalidFields.push(`severity must be P0|P1|P2|P3, got "${data.severity}"`);
+    }
+
+    // Check priority values
+    if (data.priority && !['blocker', 'critical', 'high', 'medium', 'low'].includes(data.priority)) {
+      invalidFields.push(`priority must be blocker|critical|high|medium|low, got "${data.priority}"`);
+    }
+
+    if (missingFields.length > 0 || invalidFields.length > 0) {
+      const filename = path.basename(filepath);
+      let errorMsg = '\n' + chalk.red('❌ ') + chalk.bold.yellow(filename) + ':\n';
+
+      if (missingFields.length > 0) {
+        errorMsg += chalk.gray('  Missing fields:\n');
+        missingFields.forEach(field => {
+          errorMsg += chalk.red('    - ') + field + '\n';
+        });
+      }
+
+      if (invalidFields.length > 0) {
+        errorMsg += chalk.gray('  Invalid fields:\n');
+        invalidFields.forEach(field => {
+          errorMsg += chalk.red('    - ') + field + '\n';
+        });
+      }
+
+      errorMsg += chalk.gray('  File: ') + chalk.dim(filepath);
+      throw new Error(errorMsg);
     }
 
     const stats = fs.statSync(filepath);
