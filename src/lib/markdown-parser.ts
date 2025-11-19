@@ -10,9 +10,11 @@ import { TaskDocument, TaskFrontmatter, SyncFilter } from './types';
 
 export class MarkdownParser {
   private tasksDir: string;
+  private ignoredDirs: Set<string>;
 
-  constructor(projectRoot: string) {
+  constructor(projectRoot: string, ignoredDirs: string[] = []) {
     this.tasksDir = path.join(projectRoot, 'docs', 'tasks');
+    this.ignoredDirs = new Set(ignoredDirs.map(dir => dir.toLowerCase()));
   }
 
   /**
@@ -51,6 +53,11 @@ export class MarkdownParser {
     const subdirs = ['backlog', 'active', 'completed'];
 
     for (const subdir of subdirs) {
+      // Skip ignored directories
+      if (this.ignoredDirs.has(subdir.toLowerCase())) {
+        continue;
+      }
+
       const dirPath = path.join(this.tasksDir, subdir);
 
       if (!fs.existsSync(dirPath)) {
@@ -322,6 +329,11 @@ export class MarkdownParser {
     const subdirs = ['backlog', 'active', 'completed'];
 
     for (const subdir of subdirs) {
+      // Skip ignored directories
+      if (this.ignoredDirs.has(subdir.toLowerCase())) {
+        continue;
+      }
+
       const dirPath = path.join(this.tasksDir, subdir);
 
       if (!fs.existsSync(dirPath)) {
@@ -350,6 +362,11 @@ export class MarkdownParser {
     const subdirs = ['backlog', 'active', 'completed'];
 
     for (const subdir of subdirs) {
+      // Skip ignored directories
+      if (this.ignoredDirs.has(subdir.toLowerCase())) {
+        continue;
+      }
+
       const dirPath = path.join(this.tasksDir, subdir);
 
       if (!fs.existsSync(dirPath)) {

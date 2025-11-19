@@ -49,11 +49,12 @@ function detectGitHubRepo(): string | null {
 // Get environment variables
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const GITHUB_REPO = process.env.GITHUB_REPO || detectGitHubRepo();
+const IGNORED_DIRS_ENV = process.env.SYNC_IGNORE_DIRS?.split(',').map(d => d.trim()) || [];
 
 /**
  * Initialize sync components
  */
-function initializeSync(): {
+function initializeSync(ignoredDirs: string[] = []): {
   github: GitHubClient;
   parser: MarkdownParser;
   mapper: FieldMapper;
@@ -77,7 +78,7 @@ function initializeSync(): {
   }
 
   const github = new GitHubClient(GITHUB_TOKEN, GITHUB_REPO);
-  const parser = new MarkdownParser(PROJECT_ROOT);
+  const parser = new MarkdownParser(PROJECT_ROOT, ignoredDirs);
   const mapper = new FieldMapper();
   const engine = new SyncEngine(github, parser, mapper, PROJECT_ROOT, GITHUB_REPO);
   const resolver = new ConflictResolver(mapper);
@@ -169,8 +170,15 @@ program
   .option('--clean', 'Clean up orphaned local files (where GitHub issues were deleted)')
   .option('--file <path>', 'Sync only the specified file')
   .option('--issue <number>', 'Sync only the specified issue number', parseInt)
+  .option('--ignore-dir <dirs...>', 'Directories to ignore (e.g., completed active)')
   .action(async (options) => {
-    const { github, engine, resolver } = initializeSync();
+    // Combine ignored directories from environment and CLI
+    const ignoredDirs = [...IGNORED_DIRS_ENV, ...(options.ignoreDir || [])];
+    if (ignoredDirs.length > 0) {
+      console.log(chalk.gray(`Ignoring directories: ${ignoredDirs.join(', ')}`));
+    }
+
+    const { github, engine, resolver } = initializeSync(ignoredDirs);
 
     await verifyAccess(github);
 
@@ -304,8 +312,10 @@ program
   .description('Push local changes to GitHub (one-way)')
   .option('--file <path>', 'Push only the specified file')
   .option('--issue <number>', 'Push only the specified issue number', parseInt)
+  .option('--ignore-dir <dirs...>', 'Directories to ignore (e.g., completed active)')
   .action(async (options) => {
-    const { github, engine } = initializeSync();
+    const ignoredDirs = [...IGNORED_DIRS_ENV, ...(options.ignoreDir || [])];
+    const { github, engine } = initializeSync(ignoredDirs);
 
     await verifyAccess(github);
 
@@ -343,8 +353,10 @@ program
   .description('Pull changes from GitHub (one-way)')
   .option('--file <path>', 'Pull only the specified file')
   .option('--issue <number>', 'Pull only the specified issue number', parseInt)
+  .option('--ignore-dir <dirs...>', 'Directories to ignore (e.g., completed active)')
   .action(async (options) => {
-    const { github, engine } = initializeSync();
+    const ignoredDirs = [...IGNORED_DIRS_ENV, ...(options.ignoreDir || [])];
+    const { github, engine } = initializeSync(ignoredDirs);
 
     await verifyAccess(github);
 
@@ -382,8 +394,10 @@ program
   .description('Show sync status without making changes')
   .option('--file <path>', 'Check status of only the specified file')
   .option('--issue <number>', 'Check status of only the specified issue number', parseInt)
+  .option('--ignore-dir <dirs...>', 'Directories to ignore (e.g., completed active)')
   .action(async (options) => {
-    const { github, engine } = initializeSync();
+    const ignoredDirs = [...IGNORED_DIRS_ENV, ...(options.ignoreDir || [])];
+    const { github, engine } = initializeSync(ignoredDirs);
 
     await verifyAccess(github);
 
