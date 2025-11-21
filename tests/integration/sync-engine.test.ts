@@ -41,7 +41,7 @@ describe('SyncEngine', () => {
   });
 
   describe('sync', () => {
-    it('should push local tasks when GitHub issue does not exist', async () => {
+    it('should skip orphaned local tasks when GitHub issue does not exist', async () => {
       const task: TaskDocument = {
         issueNumber: 1,
         filename: '001-test.md',
@@ -67,7 +67,10 @@ describe('SyncEngine', () => {
 
       const result = await engine.sync();
 
-      expect(result.pushed).toContain(1);
+      // Changed behavior: orphaned tasks (where GitHub issue doesn't exist) are now skipped
+      // to prevent accidentally recreating deleted issues. Use sync --clean to remove them.
+      expect(result.skipped).toContain(1);
+      expect(result.pushed).toHaveLength(0);
       expect(result.pulled).toHaveLength(0);
       expect(result.conflicts).toHaveLength(0);
 

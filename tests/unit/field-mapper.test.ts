@@ -24,7 +24,7 @@ describe('FieldMapper', () => {
           priority: 'high',
           type: 'feature',
           component: ['auth', 'api'],
-          labels: ['needs-review'],
+          labels: ['review:needed'],
           assignee: 'thom',
           status: 'active',
         },
@@ -36,7 +36,7 @@ describe('FieldMapper', () => {
       expect(result.title).toBe('Test Task');
       expect(result.state).toBe('open');
       expect(result.assignee).toBe('thunter009'); // Mapped username
-      expect(result.labels).toContain('needs-review');
+      expect(result.labels).toContain('review:needed');
       expect(result.labels).toContain('component:auth');
       expect(result.labels).toContain('component:api');
       expect(result.labels).toContain('priority:high');
@@ -95,6 +95,34 @@ describe('FieldMapper', () => {
       expect(result.assignee).toBeUndefined();
     });
 
+    it('should filter out invalid assignee values', () => {
+      const invalidValues = ['completed', 'active', 'backlog', 'none', '', 'UNASSIGNED'];
+
+      invalidValues.forEach(value => {
+        const task: TaskDocument = {
+          issueNumber: 3,
+          filename: '003-task.md',
+          filepath: '/path/to/active/003-task.md',
+          lastModified: new Date(),
+          folderLastModified: new Date(),
+          frontmatter: {
+            created_utc: '2025-01-10T00:00:00Z',
+            reporter: 'thom',
+            title: 'Task',
+            severity: 'P2',
+            priority: 'medium',
+            component: [],
+            labels: [],
+            assignee: value,
+          },
+          body: 'Content',
+        };
+
+        const result = mapper.taskToGitHub(task);
+        expect(result.assignee).toBeUndefined();
+      });
+    });
+
     it('should remove duplicate labels', () => {
       const task: TaskDocument = {
         issueNumber: 4,
@@ -109,14 +137,118 @@ describe('FieldMapper', () => {
           severity: 'P2',
           priority: 'high',
           component: [],
-          labels: ['bug', 'bug'], // Duplicate
+          labels: ['type:bug', 'type:bug'], // Duplicate
         },
         body: 'Content',
       };
 
       const result = mapper.taskToGitHub(task);
-      const bugLabels = result.labels.filter(l => l === 'bug');
+      const bugLabels = result.labels.filter(l => l === 'type:bug');
       expect(bugLabels.length).toBe(1);
+    });
+
+    it('should clean [#NNN] prefix from title by default', () => {
+      const task: TaskDocument = {
+        issueNumber: 5,
+        filename: '005-prefixed.md',
+        filepath: '/path/to/active/005-prefixed.md',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          reporter: 'thom',
+          title: '[#005] Task with prefix',
+          severity: 'P2',
+          priority: 'medium',
+          component: [],
+          labels: [],
+        },
+        body: 'Content',
+      };
+
+      const result = mapper.taskToGitHub(task);
+      expect(result.title).toBe('Task with prefix');
+    });
+
+    it('should clean various [#NNN] prefix formats', () => {
+      const testCases = [
+        { input: '[#1] Single digit', expected: 'Single digit' },
+        { input: '[#123] Three digits', expected: 'Three digits' },
+        { input: '[#0001] Leading zeros', expected: 'Leading zeros' },
+        { input: '[#999]No space after', expected: 'No space after' },
+        { input: '[#42]  Multiple spaces', expected: 'Multiple spaces' },
+      ];
+
+      testCases.forEach(({ input, expected }) => {
+        const task: TaskDocument = {
+          issueNumber: 1,
+          filename: '001-test.md',
+          filepath: '/path/to/active/001-test.md',
+          lastModified: new Date(),
+          folderLastModified: new Date(),
+          frontmatter: {
+            created_utc: '2025-01-10T00:00:00Z',
+            reporter: 'thom',
+            title: input,
+            severity: 'P2',
+            priority: 'medium',
+            component: [],
+            labels: [],
+          },
+          body: 'Content',
+        };
+
+        const result = mapper.taskToGitHub(task);
+        expect(result.title).toBe(expected);
+      });
+    });
+
+    it('should keep title prefix when keepTitlePrefixes is true', () => {
+      const mapperWithFlag = new FieldMapper({ keepTitlePrefixes: true });
+
+      const task: TaskDocument = {
+        issueNumber: 5,
+        filename: '005-prefixed.md',
+        filepath: '/path/to/active/005-prefixed.md',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          reporter: 'thom',
+          title: '[#005] Task with prefix',
+          severity: 'P2',
+          priority: 'medium',
+          component: [],
+          labels: [],
+        },
+        body: 'Content',
+      };
+
+      const result = mapperWithFlag.taskToGitHub(task);
+      expect(result.title).toBe('[#005] Task with prefix');
+    });
+
+    it('should not modify titles without [#NNN] prefix', () => {
+      const task: TaskDocument = {
+        issueNumber: 6,
+        filename: '006-normal.md',
+        filepath: '/path/to/active/006-normal.md',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          reporter: 'thom',
+          title: 'Normal task title',
+          severity: 'P2',
+          priority: 'medium',
+          component: [],
+          labels: [],
+        },
+        body: 'Content',
+      };
+
+      const result = mapper.taskToGitHub(task);
+      expect(result.title).toBe('Normal task title');
     });
   });
 
@@ -127,7 +259,7 @@ describe('FieldMapper', () => {
         title: 'GitHub Issue',
         body: 'Issue body',
         state: 'open',
-        labels: ['priority:high', 'severity:P1', 'component:ui', 'type:bug', 'needs-triage'],
+        labels: ['priority:high', 'severity:P1', 'component:ui', 'type:bug', 'triage:needed'],
         assignee: 'john',
         created_at: '2025-01-10T00:00:00Z',
         updated_at: '2025-01-11T00:00:00Z',
@@ -141,7 +273,7 @@ describe('FieldMapper', () => {
       expect(result.frontmatter.severity).toBe('P1');
       expect(result.frontmatter.component).toEqual(['ui']);
       expect(result.frontmatter.type).toBe('bug');
-      expect(result.frontmatter.labels).toEqual(['needs-triage']);
+      expect(result.frontmatter.labels).toEqual(['triage:needed']);
       expect(result.frontmatter.assignee).toBe('john');
       expect(result.body).toBe('Issue body');
     });
@@ -228,7 +360,7 @@ describe('FieldMapper', () => {
       expect(result.frontmatter.priority).toBe('medium');
       expect(result.frontmatter.severity).toBe('P2');
       expect(result.frontmatter.component).toEqual([]);
-      expect(result.frontmatter.assignee).toBe('unassigned');
+      expect(result.frontmatter.assignee).toBeUndefined(); // No assignee = undefined, not 'unassigned'
       expect(result.frontmatter.reporter).toBe('System');
       expect(result.body).toBe('');
     });
@@ -244,8 +376,8 @@ describe('FieldMapper', () => {
         'component:auth',
         'component:api',
         'status:active',
-        'needs-review',
-        'urgent',
+        'review:needed',
+        'triage:needed',
       ];
 
       const result = (mapper as any).parseLabels(labels);
@@ -255,7 +387,7 @@ describe('FieldMapper', () => {
       expect(result.type).toBe('bug');
       expect(result.component).toEqual(['auth', 'api']);
       expect(result.status).toBe('active');
-      expect(result.labels).toEqual(['needs-review', 'urgent']);
+      expect(result.labels).toEqual(['review:needed', 'triage:needed']);
     });
   });
 
@@ -378,6 +510,76 @@ Issue content here
 
       expect(hash).toBeTruthy();
       expect(typeof hash).toBe('string');
+    });
+
+    it('should normalize title with [#NNN] prefix in hash calculation', () => {
+      const taskWithPrefix: TaskDocument = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: '/path/to/active/001-test.md',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          reporter: 'thom',
+          title: '[#001] Test Title',
+          severity: 'P2',
+          priority: 'high',
+          component: [],
+          labels: [],
+        },
+        body: 'Content',
+      };
+
+      const taskWithoutPrefix: TaskDocument = {
+        ...taskWithPrefix,
+        frontmatter: {
+          ...taskWithPrefix.frontmatter,
+          title: 'Test Title',
+        },
+      };
+
+      const hashWithPrefix = mapper.hashTask(taskWithPrefix);
+      const hashWithoutPrefix = mapper.hashTask(taskWithoutPrefix);
+
+      // Hashes should be the same because prefix is cleaned before hashing
+      expect(hashWithPrefix).toBe(hashWithoutPrefix);
+    });
+
+    it('should preserve title prefix in hash when keepTitlePrefixes is true', () => {
+      const mapperWithFlag = new FieldMapper({ keepTitlePrefixes: true });
+
+      const taskWithPrefix: TaskDocument = {
+        issueNumber: 1,
+        filename: '001-test.md',
+        filepath: '/path/to/active/001-test.md',
+        lastModified: new Date(),
+        folderLastModified: new Date(),
+        frontmatter: {
+          created_utc: '2025-01-10T00:00:00Z',
+          reporter: 'thom',
+          title: '[#001] Test Title',
+          severity: 'P2',
+          priority: 'high',
+          component: [],
+          labels: [],
+        },
+        body: 'Content',
+      };
+
+      const taskWithoutPrefix: TaskDocument = {
+        ...taskWithPrefix,
+        frontmatter: {
+          ...taskWithPrefix.frontmatter,
+          title: 'Test Title',
+        },
+      };
+
+      const hashWithPrefix = mapperWithFlag.hashTask(taskWithPrefix);
+      const hashWithoutPrefix = mapperWithFlag.hashTask(taskWithoutPrefix);
+
+      // Hashes should be different when keepTitlePrefixes is true
+      expect(hashWithPrefix).not.toBe(hashWithoutPrefix);
     });
   });
 

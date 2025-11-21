@@ -72,3 +72,8 @@ export interface SyncResult {
 }
 
 export type ConflictResolution = 'local' | 'remote' | 'skip';
+
+export interface SyncFilter {
+  issueNumber?: number;
+  filepath?: string;
+}

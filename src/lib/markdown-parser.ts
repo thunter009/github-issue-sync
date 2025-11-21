@@ -5,24 +5,59 @@
 import fs from 'fs';
 import path from 'path';
 import matter from 'gray-matter';
-import { TaskDocument, TaskFrontmatter } from './types';
+import chalk from 'chalk';
+import { TaskDocument, TaskFrontmatter, SyncFilter } from './types';
 
 export class MarkdownParser {
   private tasksDir: string;
+  private ignoredDirs: Set<string>;
 
-  constructor(projectRoot: string) {
+  constructor(projectRoot: string, ignoredDirs: string[] = []) {
     this.tasksDir = path.join(projectRoot, 'docs', 'tasks');
+    this.ignoredDirs = new Set(ignoredDirs.map(dir => dir.toLowerCase()));
   }
 
   /**
    * Discover all task markdown files
    */
-  async discoverTasks(): Promise<TaskDocument[]> {
+  async discoverTasks(filter?: SyncFilter): Promise<TaskDocument[]> {
     const tasks: TaskDocument[] = [];
+    let errorCount = 0;
+
+    // If filtering by filepath, try to load that specific file
+    if (filter?.filepath) {
+      // Check if file exists
+      if (!fs.existsSync(filter.filepath)) {
+        throw new Error(`File not found: ${filter.filepath}`);
+      }
+
+      // Extract issue number from filename
+      const filename = path.basename(filter.filepath);
+      const match = filename.match(/^(\d+)-/);
+      if (!match) {
+        throw new Error(`File does not have issue number in name: ${filename}`);
+      }
+
+      const issueNumber = parseInt(match[1], 10);
+
+      try {
+        const task = await this.parseTask(filter.filepath, issueNumber);
+        tasks.push(task);
+      } catch (error: any) {
+        throw new Error(`Failed to parse ${filter.filepath}: ${error.message}`);
+      }
+
+      return tasks;
+    }
 
     const subdirs = ['backlog', 'active', 'completed'];
 
     for (const subdir of subdirs) {
+      // Skip ignored directories
+      if (this.ignoredDirs.has(subdir.toLowerCase())) {
+        continue;
+      }
+
       const dirPath = path.join(this.tasksDir, subdir);
 
       if (!fs.existsSync(dirPath)) {
@@ -45,13 +80,29 @@ export class MarkdownParser {
         const issueNumber = parseInt(match[1], 10);
         const filepath = path.join(dirPath, file);
 
+        // Apply issue number filter if specified
+        if (filter?.issueNumber && filter.issueNumber !== issueNumber) {
+          continue;
+        }
+
         try {
           const task = await this.parseTask(filepath, issueNumber);
           tasks.push(task);
         } catch (error: any) {
-          console.warn(`Warning: Failed to parse ${filepath}: ${error.message}`);
+          errorCount++;
+          // For detailed validation errors, just print the error message
+          if (error.message.includes('❌')) {
+            console.warn(error.message);
+          } else {
+            console.warn(`Warning: Failed to parse ${filepath}: ${error.message}`);
+          }
         }
       }
+    }
+
+    // Show summary if there were errors
+    if (errorCount > 0) {
+      console.warn(chalk.yellow(`\n⚠️  ${errorCount} file(s) failed validation. Fix the frontmatter to sync these files.\n`));
     }
 
     return tasks;
@@ -64,9 +115,58 @@ export class MarkdownParser {
     const content = fs.readFileSync(filepath, 'utf-8');
     const { data, content: body } = matter(content);
 
-    // Validate frontmatter
-    if (!data.title || !data.created_utc) {
-      throw new Error(`Missing required frontmatter fields in ${filepath}`);
+    // Validate required frontmatter fields
+    const requiredFields = {
+      title: 'string',
+      created_utc: 'string',
+      reporter: 'string',
+      severity: 'string (P0|P1|P2|P3)',
+      priority: 'string (blocker|critical|high|medium|low)',
+      component: 'array',
+      labels: 'array'
+    };
+
+    const missingFields: string[] = [];
+    const invalidFields: string[] = [];
+
+    for (const [field, type] of Object.entries(requiredFields)) {
+      if (data[field] === undefined || data[field] === null) {
+        missingFields.push(`${field} (${type})`);
+      } else if (type === 'array' && !Array.isArray(data[field])) {
+        invalidFields.push(`${field} should be array, got ${typeof data[field]}`);
+      }
+    }
+
+    // Check severity values
+    if (data.severity && !['P0', 'P1', 'P2', 'P3'].includes(data.severity)) {
+      invalidFields.push(`severity must be P0|P1|P2|P3, got "${data.severity}"`);
+    }
+
+    // Check priority values
+    if (data.priority && !['blocker', 'critical', 'high', 'medium', 'low'].includes(data.priority)) {
+      invalidFields.push(`priority must be blocker|critical|high|medium|low, got "${data.priority}"`);
+    }
+
+    if (missingFields.length > 0 || invalidFields.length > 0) {
+      const filename = path.basename(filepath);
+      let errorMsg = '\n' + chalk.red('❌ ') + chalk.bold.yellow(filename) + ':\n';
+
+      if (missingFields.length > 0) {
+        errorMsg += chalk.gray('  Missing fields:\n');
+        missingFields.forEach(field => {
+          errorMsg += chalk.red('    - ') + field + '\n';
+        });
+      }
+
+      if (invalidFields.length > 0) {
+        errorMsg += chalk.gray('  Invalid fields:\n');
+        invalidFields.forEach(field => {
+          errorMsg += chalk.red('    - ') + field + '\n';
+        });
+      }
+
+      errorMsg += chalk.gray('  File: ') + chalk.dim(filepath);
+      throw new Error(errorMsg);
     }
 
     const stats = fs.statSync(filepath);
@@ -229,6 +329,11 @@ export class MarkdownParser {
     const subdirs = ['backlog', 'active', 'completed'];
 
     for (const subdir of subdirs) {
+      // Skip ignored directories
+      if (this.ignoredDirs.has(subdir.toLowerCase())) {
+        continue;
+      }
+
       const dirPath = path.join(this.tasksDir, subdir);
 
       if (!fs.existsSync(dirPath)) {
@@ -257,6 +362,11 @@ export class MarkdownParser {
     const subdirs = ['backlog', 'active', 'completed'];
 
     for (const subdir of subdirs) {
+      // Skip ignored directories
+      if (this.ignoredDirs.has(subdir.toLowerCase())) {
+        continue;
+      }
+
       const dirPath = path.join(this.tasksDir, subdir);
 
       if (!fs.existsSync(dirPath)) {

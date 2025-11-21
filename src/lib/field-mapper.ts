@@ -3,12 +3,62 @@
  */
 
 import { TaskDocument, TaskFrontmatter, GitHubIssueData } from './types';
+import chalk from 'chalk';
 
 export class FieldMapper {
   // Map local assignee names to GitHub usernames
   private readonly assigneeMap: Record<string, string> = {
     thom: 'thunter009',
   };
+
+  // Track which invalid labels we've already warned about
+  private invalidLabelsWarned = new Set<string>();
+
+  // Configuration options
+  private readonly keepTitlePrefixes: boolean;
+
+  constructor(options: { keepTitlePrefixes?: boolean } = {}) {
+    this.keepTitlePrefixes = options.keepTitlePrefixes ?? false;
+  }
+
+  /**
+   * Validate if a label follows the key:value format
+   */
+  private isValidLabel(label: string): boolean {
+    // Must contain a colon, but not at the start or end
+    return label.includes(':') &&
+           label.indexOf(':') > 0 &&
+           label.indexOf(':') < label.length - 1;
+  }
+
+  /**
+   * Filter and warn about invalid labels
+   */
+  private filterInvalidLabels(labels: string[], context: string): string[] {
+    const valid: string[] = [];
+    const invalid: string[] = [];
+
+    for (const label of labels) {
+      if (this.isValidLabel(label)) {
+        valid.push(label);
+      } else {
+        invalid.push(label);
+        if (!this.invalidLabelsWarned.has(label)) {
+          this.invalidLabelsWarned.add(label);
+          console.warn(chalk.yellow(`⚠ Removing invalid label "${label}" (must be in key:value format) from ${context}`));
+        }
+      }
+    }
+
+    return valid;
+  }
+
+  /**
+   * Clean title by removing issue number prefix like [#011]
+   */
+  private cleanTitle(title: string): string {
+    return title.replace(/^\[#\d+\]\s*/, '').trim();
+  }
 
   /**
    * Convert task document to GitHub issue format
@@ -22,9 +72,13 @@ export class FieldMapper {
   } {
     const { frontmatter, body } = task;
 
-    // Combine all labels
+    // Filter out non-conforming labels from frontmatter.labels
+    const validLabels = Array.isArray(frontmatter.labels)
+      ? this.filterInvalidLabels(frontmatter.labels, `task ${task.filename}`)
+      : [];
+
     const labels = [
-      ...(Array.isArray(frontmatter.labels) ? frontmatter.labels : []),
+      ...validLabels,
       ...(Array.isArray(frontmatter.component) ? frontmatter.component.map((c) => `component:${c}`) : []),
       `priority:${frontmatter.priority}`,
       `severity:${frontmatter.severity}`,
@@ -43,13 +97,20 @@ export class FieldMapper {
     const state = task.filepath.includes('/completed/') ? 'closed' : 'open';
 
     // Map assignee to GitHub username
+    // Filter out placeholder values that aren't real usernames
+    const invalidAssignees = ['unassigned', 'completed', 'active', 'backlog', 'none', ''];
     let assignee: string | undefined = undefined;
-    if (frontmatter.assignee && frontmatter.assignee !== 'unassigned') {
+    if (frontmatter.assignee && !invalidAssignees.includes(frontmatter.assignee.toLowerCase())) {
       assignee = this.assigneeMap[frontmatter.assignee] || frontmatter.assignee;
     }
 
+    // Clean title unless keepTitlePrefixes flag is set
+    const title = this.keepTitlePrefixes
+      ? frontmatter.title
+      : this.cleanTitle(frontmatter.title);
+
     return {
-      title: frontmatter.title,
+      title,
       body: this.buildIssueBody(frontmatter, body),
       labels: [...new Set(labels)], // Remove duplicates
       assignee,
@@ -76,7 +137,7 @@ export class FieldMapper {
       priority: priority || 'medium',
       severity: severity || 'P2',
       component: component,
-      assignee: issue.assignee || 'unassigned',
+      assignee: issue.assignee || undefined, // Don't save 'unassigned', leave undefined
       created_utc: existingTask?.frontmatter.created_utc || issue.created_at,
       reporter: existingTask?.frontmatter.reporter || 'System',
     };
@@ -212,7 +273,13 @@ export class FieldMapper {
       } else if (label.startsWith('status:')) {
         result.status = label.replace('status:', '') as TaskFrontmatter['status'];
       } else {
-        result.labels.push(label);
+        // Only keep labels in key:value format
+        if (this.isValidLabel(label)) {
+          result.labels.push(label);
+        } else if (!this.invalidLabelsWarned.has(label)) {
+          this.invalidLabelsWarned.add(label);
+          console.warn(chalk.yellow(`⚠ Removing invalid label "${label}" from GitHub (must be in key:value format)`));
+        }
       }
     }
 
@@ -236,10 +303,17 @@ export class FieldMapper {
 
   /**
    * Generate hash for task document
+   * Uses normalized representation (cleaned title) to match GitHub
    */
   hashTask(task: TaskDocument): string {
+    // Normalize frontmatter title to match what we send to GitHub
+    const normalizedFrontmatter = {
+      ...task.frontmatter,
+      title: this.keepTitlePrefixes ? task.frontmatter.title : this.cleanTitle(task.frontmatter.title),
+    };
+
     const content = JSON.stringify({
-      frontmatter: task.frontmatter,
+      frontmatter: normalizedFrontmatter,
       body: task.body,
     });
     return this.generateHash(content);

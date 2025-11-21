@@ -17,6 +17,7 @@ import { MarkdownParser } from './lib/markdown-parser';
 import { FieldMapper } from './lib/field-mapper';
 import { SyncEngine } from './lib/sync-engine';
 import { ConflictResolver } from './lib/conflict-resolver';
+import { SyncFilter } from './lib/types';
 
 // Load environment variables from target project directory
 config({ path: path.join(process.cwd(), '.env.local') });
@@ -48,11 +49,15 @@ function detectGitHubRepo(): string | null {
 // Get environment variables
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const GITHUB_REPO = process.env.GITHUB_REPO || detectGitHubRepo();
+const IGNORED_DIRS_ENV = process.env.SYNC_IGNORE_DIRS?.split(',').map(d => d.trim()) || [];
 
 /**
  * Initialize sync components
  */
-function initializeSync(): {
+function initializeSync(
+  ignoredDirs: string[] = [],
+  keepTitlePrefixes: boolean = false
+): {
   github: GitHubClient;
   parser: MarkdownParser;
   mapper: FieldMapper;
@@ -76,8 +81,8 @@ function initializeSync(): {
   }
 
   const github = new GitHubClient(GITHUB_TOKEN, GITHUB_REPO);
-  const parser = new MarkdownParser(PROJECT_ROOT);
-  const mapper = new FieldMapper();
+  const parser = new MarkdownParser(PROJECT_ROOT, ignoredDirs);
+  const mapper = new FieldMapper({ keepTitlePrefixes });
   const engine = new SyncEngine(github, parser, mapper, PROJECT_ROOT, GITHUB_REPO);
   const resolver = new ConflictResolver(mapper);
 
@@ -165,10 +170,61 @@ program
   .command('sync', { isDefault: true })
   .description('Bidirectional sync between local and GitHub')
   .option('--create', 'Create new GitHub issues from files without issue numbers')
+  .option('--clean', 'Clean up orphaned local files (where GitHub issues were deleted)')
+  .option('--file <path>', 'Sync only the specified file')
+  .option('--issue <number>', 'Sync only the specified issue number', parseInt)
+  .option('--ignore-dir <dirs...>', 'Directories to ignore (e.g., completed active)')
+  .option('--keep-title-prefixes', 'Keep [#NNN] prefixes in GitHub issue titles')
   .action(async (options) => {
-    const { github, engine, resolver } = initializeSync();
+    // Combine ignored directories from environment and CLI
+    const ignoredDirs = [...IGNORED_DIRS_ENV, ...(options.ignoreDir || [])];
+    if (ignoredDirs.length > 0) {
+      console.log(chalk.gray(`Ignoring directories: ${ignoredDirs.join(', ')}`));
+    }
+
+    const { github, engine, resolver } = initializeSync(ignoredDirs, options.keepTitlePrefixes);
 
     await verifyAccess(github);
+
+    // Validate filter options
+    if (options.file && options.issue) {
+      console.error(chalk.red('Error: Cannot specify both --file and --issue'));
+      process.exit(1);
+    }
+
+    let filter: SyncFilter | undefined;
+    if (options.file) {
+      filter = { filepath: path.resolve(PROJECT_ROOT, options.file) };
+    }
+    if (options.issue) {
+      filter = { issueNumber: options.issue };
+    }
+
+    // Handle cleanup first if flag is set
+    if (options.clean) {
+      try {
+        const cleanResult = await engine.cleanOrphanedTasks();
+
+        if (cleanResult.deleted.length > 0) {
+          console.log(chalk.bold.red('\n✗ Deleted Files:'));
+          for (const filename of cleanResult.deleted) {
+            console.log(chalk.red(`  ${filename}`));
+          }
+        }
+
+        if (cleanResult.skipped.length > 0) {
+          console.log(chalk.bold.gray('\n○ Skipped Files:'));
+          for (const filename of cleanResult.skipped) {
+            console.log(chalk.gray(`  ${filename}`));
+          }
+        }
+
+        console.log();
+      } catch (error: any) {
+        console.error(chalk.red(`\nCleanup failed: ${error.message}`));
+        process.exit(1);
+      }
+    }
 
     // Handle issue creation first if flag is set
     if (options.create) {
@@ -212,7 +268,7 @@ program
     const spinner = ora('Syncing issues...').start();
 
     try {
-      const result = await engine.sync();
+      const result = await engine.sync(filter);
 
       spinner.stop();
 
@@ -258,15 +314,34 @@ program
 program
   .command('push')
   .description('Push local changes to GitHub (one-way)')
-  .action(async () => {
-    const { github, engine } = initializeSync();
+  .option('--file <path>', 'Push only the specified file')
+  .option('--issue <number>', 'Push only the specified issue number', parseInt)
+  .option('--ignore-dir <dirs...>', 'Directories to ignore (e.g., completed active)')
+  .option('--keep-title-prefixes', 'Keep [#NNN] prefixes in GitHub issue titles')
+  .action(async (options) => {
+    const ignoredDirs = [...IGNORED_DIRS_ENV, ...(options.ignoreDir || [])];
+    const { github, engine } = initializeSync(ignoredDirs, options.keepTitlePrefixes);
 
     await verifyAccess(github);
+
+    // Validate filter options
+    if (options.file && options.issue) {
+      console.error(chalk.red('Error: Cannot specify both --file and --issue'));
+      process.exit(1);
+    }
+
+    let filter: SyncFilter | undefined;
+    if (options.file) {
+      filter = { filepath: path.resolve(PROJECT_ROOT, options.file) };
+    }
+    if (options.issue) {
+      filter = { issueNumber: options.issue };
+    }
 
     const spinner = ora('Pushing to GitHub...').start();
 
     try {
-      const result = await engine.pushOnly();
+      const result = await engine.pushOnly(filter);
       spinner.succeed('Push complete');
 
       printSyncResult(result);
@@ -281,15 +356,33 @@ program
 program
   .command('pull')
   .description('Pull changes from GitHub (one-way)')
-  .action(async () => {
-    const { github, engine } = initializeSync();
+  .option('--file <path>', 'Pull only the specified file')
+  .option('--issue <number>', 'Pull only the specified issue number', parseInt)
+  .option('--ignore-dir <dirs...>', 'Directories to ignore (e.g., completed active)')
+  .action(async (options) => {
+    const ignoredDirs = [...IGNORED_DIRS_ENV, ...(options.ignoreDir || [])];
+    const { github, engine } = initializeSync(ignoredDirs);
 
     await verifyAccess(github);
+
+    // Validate filter options
+    if (options.file && options.issue) {
+      console.error(chalk.red('Error: Cannot specify both --file and --issue'));
+      process.exit(1);
+    }
+
+    let filter: SyncFilter | undefined;
+    if (options.file) {
+      filter = { filepath: path.resolve(PROJECT_ROOT, options.file) };
+    }
+    if (options.issue) {
+      filter = { issueNumber: options.issue };
+    }
 
     const spinner = ora('Pulling from GitHub...').start();
 
     try {
-      const result = await engine.pullOnly();
+      const result = await engine.pullOnly(filter);
       spinner.succeed('Pull complete');
 
       printSyncResult(result);
@@ -304,15 +397,33 @@ program
 program
   .command('status')
   .description('Show sync status without making changes')
-  .action(async () => {
-    const { github, engine } = initializeSync();
+  .option('--file <path>', 'Check status of only the specified file')
+  .option('--issue <number>', 'Check status of only the specified issue number', parseInt)
+  .option('--ignore-dir <dirs...>', 'Directories to ignore (e.g., completed active)')
+  .action(async (options) => {
+    const ignoredDirs = [...IGNORED_DIRS_ENV, ...(options.ignoreDir || [])];
+    const { github, engine } = initializeSync(ignoredDirs);
 
     await verifyAccess(github);
+
+    // Validate filter options
+    if (options.file && options.issue) {
+      console.error(chalk.red('Error: Cannot specify both --file and --issue'));
+      process.exit(1);
+    }
+
+    let filter: SyncFilter | undefined;
+    if (options.file) {
+      filter = { filepath: path.resolve(PROJECT_ROOT, options.file) };
+    }
+    if (options.issue) {
+      filter = { issueNumber: options.issue };
+    }
 
     const spinner = ora('Checking status...').start();
 
     try {
-      const { toSync, conflicts } = await engine.status();
+      const { toSync, conflicts } = await engine.status(filter);
 
       spinner.succeed('Status check complete');
 

@@ -1,5 +1,5 @@
 ---
-created_utc: 2025-01-13T00:00:00Z
+created_utc: 2025-01-13T00:00:00.000Z
 title: Auto-Detect Orphaned Numbered Files
 severity: P3
 priority: low
@@ -11,17 +11,16 @@ labels:
 reporter: thom
 status: backlog
 ---
-
 # Auto-Detect Orphaned Numbered Files
 
 ## Summary
 
-Add automatic detection and handling for "orphaned" local files - files with issue numbers (e.g., `007-foo.md`) where the corresponding GitHub issue doesn't exist. Currently these files silently skip during sync with warnings, confusing users.
+Add automatic detection and handling for "orphaned" local files - files with issue numbers (e.g., ) where the corresponding GitHub issue doesn't exist. Currently these files silently skip during sync with warnings, confusing users.
 
 ## Problem
 
 When files have numbers but GitHub issues don't exist:
-- User creates `007-task.md` manually with wrong number
+- User creates  manually with wrong number
 - User deletes GitHub issue but keeps local file
 - Tool creates follow-up tasks with numbers (like we just did)
 
@@ -34,7 +33,7 @@ When files have numbers but GitHub issues don't exist:
 
 1. **Check GitHub issue history**
    - Use GitHub API to check if issue was deleted/moved
-   - Check `.sync-state.json` for previously synced issues
+   - Check  for previously synced issues
    - Mark known-deleted issues
 
 2. **User confirmation required**
@@ -43,22 +42,22 @@ When files have numbers but GitHub issues don't exist:
    - Offer multiple resolution options
 
 3. **Dry-run mode**
-   - `--detect-orphans` flag to find orphans
+   -  flag to find orphans
    - Display orphans without taking action
    - Let user decide next steps
 
 4. **Track deleted issues**
-   - Add `deletedIssues: number[]` to `.sync-state.json`
+   - Add  to 
    - Prevent re-creation of intentionally deleted issues
    - Clear on explicit user request
 
 ## Action Items
 
-- [ ] Add orphan detection to `MarkdownParser.discoverTasks()`
+- [ ] Add orphan detection to 
   - [ ] Return separate array of orphaned files
   - [ ] Check GitHub API for issue existence
   - [ ] Check sync state for deletion history
-- [ ] Add `--detect-orphans` flag to sync command
+- [ ] Add  flag to sync command
   - [ ] Display orphaned files with context
   - [ ] Show last known sync state if available
   - [ ] Suggest actions (create, renumber, delete)
@@ -67,11 +66,11 @@ When files have numbers but GitHub issues don't exist:
   - [ ] Option 2: Remove number from filename
   - [ ] Option 3: Delete local file
   - [ ] Option 4: Skip (keep as-is)
-- [ ] Update `.sync-state.json` schema
-  - [ ] Add `deletedIssues: number[]` field
+- [ ] Update  schema
+  - [ ] Add  field
   - [ ] Track when issues disappear from GitHub
   - [ ] Prevent re-creation without explicit override
-- [ ] Add `--force-create-orphans` flag
+- [ ] Add  flag
   - [ ] Bypass safety checks (dangerous)
   - [ ] Require explicit confirmation
   - [ ] Log all actions
@@ -83,15 +82,7 @@ When files have numbers but GitHub issues don't exist:
 ## Technical Details
 
 **Detection Logic**:
-```typescript
-interface OrphanedFile {
-  filepath: string;
-  issueNumber: number;
-  wasDeleted: boolean;     // In deletedIssues list
-  lastSynced?: string;     // From sync state
-  suggestion: 'create' | 'renumber' | 'investigate';
-}
-```
+
 
 **Resolution Flow**:
 1. Discover tasks with numbers

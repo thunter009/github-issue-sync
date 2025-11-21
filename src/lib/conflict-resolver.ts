@@ -70,11 +70,17 @@ export class ConflictResolver {
     // Show title diff
     this.showTitleDiff(conflict);
 
+    // Show metadata diffs
+    this.showMetadataDiff(conflict);
+
     // Show body diff
     this.showBodyDiff(conflict);
 
     // Show labels diff
     this.showLabelsDiff(conflict);
+
+    // Show state diff
+    this.showStateDiff(conflict);
 
     // Ask for resolution
     const choices = [
@@ -142,20 +148,114 @@ export class ConflictResolver {
 
       const diff = diffLines(localBody, cleanRemoteBody);
       let hasChanges = false;
+      const CONTEXT_LINES = 2;
 
-      for (const part of diff) {
+      // Show diff with context
+      for (let i = 0; i < diff.length; i++) {
+        const part = diff[i];
+
         if (part.added) {
-          console.log(chalk.green('  + ' + part.value.replace(/\n/g, '\n  + ')));
+          // Show context before
+          if (i > 0 && !diff[i-1].added && !diff[i-1].removed) {
+            const lines = diff[i-1].value.split('\n').slice(-CONTEXT_LINES-1, -1);
+            lines.forEach(line => console.log(chalk.gray('    ' + line)));
+          }
+
+          // Show added lines
+          const lines = part.value.split('\n').filter(l => l);
+          lines.forEach(line => console.log(chalk.green('  + ' + line)));
           hasChanges = true;
+
+          // Show context after
+          if (i < diff.length - 1 && !diff[i+1].added && !diff[i+1].removed) {
+            const lines = diff[i+1].value.split('\n').slice(0, CONTEXT_LINES);
+            lines.forEach(line => line && console.log(chalk.gray('    ' + line)));
+          }
         } else if (part.removed) {
-          console.log(chalk.red('  - ' + part.value.replace(/\n/g, '\n  - ')));
+          // Show context before
+          if (i > 0 && !diff[i-1].added && !diff[i-1].removed) {
+            const lines = diff[i-1].value.split('\n').slice(-CONTEXT_LINES-1, -1);
+            lines.forEach(line => console.log(chalk.gray('    ' + line)));
+          }
+
+          // Show removed lines
+          const lines = part.value.split('\n').filter(l => l);
+          lines.forEach(line => console.log(chalk.red('  - ' + line)));
           hasChanges = true;
+
+          // Show context after
+          if (i < diff.length - 1 && !diff[i+1].added && !diff[i+1].removed) {
+            const lines = diff[i+1].value.split('\n').slice(0, CONTEXT_LINES);
+            lines.forEach(line => line && console.log(chalk.gray('    ' + line)));
+          }
         }
       }
 
       if (!hasChanges) {
-        console.log(chalk.gray('  (No significant changes)'));
+        console.log(chalk.gray('  (No changes detected)'));
       }
+      console.log();
+    }
+  }
+
+  /**
+   * Show metadata field diffs (assignee, priority, severity)
+   */
+  private showMetadataDiff(conflict: SyncConflict): void {
+    const localData = this.mapper.taskToGitHub(conflict.localData);
+    const differences: string[] = [];
+
+    // Check assignee
+    if (localData.assignee !== conflict.remoteData.assignee) {
+      differences.push(
+        chalk.bold('Assignee:') +
+        chalk.red(`\n  Local:  ${localData.assignee || '(none)'}`) +
+        chalk.green(`\n  Remote: ${conflict.remoteData.assignee || '(none)'}`)
+      );
+    }
+
+    // Check priority
+    const localPriority = conflict.localData.frontmatter.priority;
+    const remotePriorityLabel = conflict.remoteData.labels.find(l => l.startsWith('priority:'));
+    const remotePriority = remotePriorityLabel?.replace('priority:', '');
+    if (localPriority !== remotePriority && remotePriority) {
+      differences.push(
+        chalk.bold('Priority:') +
+        chalk.red(`\n  Local:  ${localPriority}`) +
+        chalk.green(`\n  Remote: ${remotePriority}`)
+      );
+    }
+
+    // Check severity
+    const localSeverity = conflict.localData.frontmatter.severity;
+    const remoteSeverityLabel = conflict.remoteData.labels.find(l => l.startsWith('severity:'));
+    const remoteSeverity = remoteSeverityLabel?.replace('severity:', '');
+    if (localSeverity !== remoteSeverity && remoteSeverity) {
+      differences.push(
+        chalk.bold('Severity:') +
+        chalk.red(`\n  Local:  ${localSeverity}`) +
+        chalk.green(`\n  Remote: ${remoteSeverity}`)
+      );
+    }
+
+    if (differences.length > 0) {
+      console.log(differences.join('\n\n'));
+      console.log();
+    }
+  }
+
+  /**
+   * Show state diff (open/closed)
+   */
+  private showStateDiff(conflict: SyncConflict): void {
+    const localData = this.mapper.taskToGitHub(conflict.localData);
+    const localState = localData.state;
+    const remoteState = conflict.remoteData.state;
+
+    if (localState !== remoteState) {
+      console.log(chalk.bold('State:'));
+      console.log(chalk.red(`  Local:  ${localState}`));
+      console.log(chalk.green(`  Remote: ${remoteState}`));
       console.log();
     }
   }

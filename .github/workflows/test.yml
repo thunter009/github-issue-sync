@@ -37,6 +37,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify pre-commit hooks installed
+        run: |
+          if [ ! -f .husky/pre-commit ]; then
+            echo "Error: .husky/pre-commit not found"
+            exit 1
+          fi
+          if ! grep -q "lint-staged" .husky/pre-commit; then
+            echo "Error: pre-commit hook does not contain lint-staged"
+            exit 1
+          fi
+          echo "✓ Pre-commit hooks verified"
+
       - name: Run tests
         run: pnpm test
 

@@ -184,7 +184,7 @@ Body`;
       (fs.readFileSync as jest.Mock).mockReturnValue(content);
 
       await expect(parser.parseTask(filepath, 1)).rejects.toThrow(
-        'Missing required frontmatter fields'
+        'Missing fields'
       );
     });
   });
