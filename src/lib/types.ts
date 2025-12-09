@@ -31,6 +31,7 @@ export interface TaskDocument {
   body: string;
   lastModified: Date;
   folderLastModified: Date; // Parent directory modification time
+  sourceType?: 'tasks' | 'openspec'; // Source parser type
 }
 
 export interface GitHubIssueData {
