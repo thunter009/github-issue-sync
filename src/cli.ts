@@ -500,6 +500,7 @@ program
   .option('--issue <number>', 'Check status of only the specified issue number', parseInt)
   .option('--source <types...>', 'Source types to sync (tasks|openspec|all)', ['all'])
   .option('--ignore-dir <dirs...>', 'Directories to ignore (e.g., completed active)')
+  .option('--strip-orphans', 'Show which files would have issue numbers stripped')
   .action(async (options) => {
     const ignoredDirs = [...IGNORED_DIRS_ENV, ...(options.ignoreDir || [])];
     const sourceTypes = parseSourceTypes(options.source);
@@ -524,6 +525,12 @@ program
     const spinner = ora('Checking status...').start();
 
     try {
+      // Check for orphaned files if --strip-orphans flag is set
+      let orphanedFiles: Array<{ issueNumber: number; filename: string; filepath: string }> = [];
+      if (options.stripOrphans) {
+        orphanedFiles = await engine.previewStripOrphanedFiles();
+      }
+
       const { toSync, conflicts } = await engine.status(filter);
 
       spinner.succeed('Status check complete');
@@ -531,6 +538,21 @@ program
       console.log(chalk.bold('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
       console.log(chalk.bold.cyan('Sync Status'));
       console.log(chalk.bold('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'));
+
+      // Show orphaned files that would be stripped
+      if (options.stripOrphans) {
+        if (orphanedFiles.length > 0) {
+          console.log(chalk.yellow(`${orphanedFiles.length} file(s) would have numbers stripped:`));
+          for (const file of orphanedFiles) {
+            const newFilename = file.filename.replace(/^\d+-/, '');
+            console.log(chalk.gray(`  #${file.issueNumber}: ${file.filename} → ${newFilename}`));
+          }
+          console.log(chalk.gray('\nRun "sync --strip-orphans" to strip these numbers'));
+          console.log(chalk.gray('Run "sync --strip-orphans --create" to strip and create new issues\n'));
+        } else {
+          console.log(chalk.green('✓ No orphaned numbered files found\n'));
+        }
+      }
 
       if (toSync.length === 0 && conflicts.length === 0) {
         console.log(chalk.green('✓ Everything is in sync'));

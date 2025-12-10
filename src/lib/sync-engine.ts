@@ -841,6 +841,26 @@ export class SyncEngine {
   }
 
   /**
+   * Preview which files would have issue numbers stripped (dry run)
+   */
+  async previewStripOrphanedFiles(): Promise<Array<{ issueNumber: number; filename: string; filepath: string }>> {
+    const tasksParser = this.registry.get('tasks') as import('./parsers').TasksParser | undefined;
+    if (!tasksParser) {
+      return [];
+    }
+
+    const numberedFiles = await tasksParser.discoverNumberedTasks();
+    if (numberedFiles.length === 0) {
+      return [];
+    }
+
+    const issueNumbers = numberedFiles.map(f => f.issueNumber);
+    const existingIssues = await this.github.getIssues(issueNumbers);
+
+    return numberedFiles.filter(f => !existingIssues.has(f.issueNumber));
+  }
+
+  /**
    * Strip issue numbers from files that don't have corresponding GitHub issues.
    * These files likely had numbers manually assigned (e.g., by AI agents) but were never synced.
    * Removes the number prefix so they can be created as new issues with GitHub-assigned numbers.
