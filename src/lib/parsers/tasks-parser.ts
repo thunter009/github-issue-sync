@@ -407,6 +407,70 @@ export class TasksParser implements ISourceParser {
   }
 
   /**
+   * Discover all numbered task files (for orphan detection)
+   */
+  async discoverNumberedTasks(): Promise<Array<{ issueNumber: number; filepath: string; filename: string }>> {
+    const tasks: Array<{ issueNumber: number; filepath: string; filename: string }> = [];
+
+    const subdirs: TaskStatus[] = ['backlog', 'active', 'completed'];
+
+    for (const subdir of subdirs) {
+      if (this.ignoredDirs.has(subdir.toLowerCase())) {
+        continue;
+      }
+
+      const dirPath = path.join(this.tasksDir, subdir);
+
+      if (!fs.existsSync(dirPath)) {
+        continue;
+      }
+
+      const files = fs.readdirSync(dirPath);
+
+      for (const file of files) {
+        if (!file.endsWith('.md') || file === 'README.md') {
+          continue;
+        }
+
+        const match = file.match(/^(\d+)-/);
+        if (match) {
+          tasks.push({
+            issueNumber: parseInt(match[1], 10),
+            filepath: path.join(dirPath, file),
+            filename: file,
+          });
+        }
+      }
+    }
+
+    return tasks;
+  }
+
+  /**
+   * Strip issue number from filename (NNN-slug.md -> slug.md)
+   */
+  async stripIssueNumber(filepath: string): Promise<string> {
+    const dir = path.dirname(filepath);
+    const filename = path.basename(filepath);
+
+    // Remove NNN- prefix
+    const newFilename = filename.replace(/^\d+-/, '');
+    const newFilepath = path.join(dir, newFilename);
+
+    if (filepath === newFilepath) {
+      return filepath; // Already stripped
+    }
+
+    // Check if target exists
+    if (fs.existsSync(newFilepath)) {
+      throw new Error(`Cannot strip: file already exists at ${newFilepath}`);
+    }
+
+    fs.renameSync(filepath, newFilepath);
+    return newFilepath;
+  }
+
+  /**
    * Rename task file with new issue number and optionally new title
    */
   async renameTask(oldFilepath: string, issueNumber: number, newTitle?: string): Promise<string> {

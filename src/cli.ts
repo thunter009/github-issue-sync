@@ -229,6 +229,7 @@ program
   .description('Bidirectional sync between local and GitHub')
   .option('--create', 'Create new GitHub issues from files without issue numbers')
   .option('--clean', 'Clean up orphaned local files (where GitHub issues were deleted)')
+  .option('--strip-orphans', 'Strip issue numbers from files without corresponding GitHub issues')
   .option('--file <path>', 'Sync only the specified file')
   .option('--issue <number>', 'Sync only the specified issue number', parseInt)
   .option('--source <types...>', 'Source types to sync (tasks|openspec|all)', ['all'])
@@ -286,7 +287,41 @@ program
       }
     }
 
-    // Handle issue creation first if flag is set
+    // Handle stripping orphaned issue numbers if flag is set
+    if (options.stripOrphans) {
+      const stripSpinner = ora('Checking for orphaned numbered files...').start();
+
+      try {
+        stripSpinner.stop();
+        const stripResult = await engine.stripOrphanedFiles();
+
+        if (stripResult.stripped.length > 0) {
+          console.log(chalk.bold.cyan('\n✓ Stripped issue numbers:'));
+          for (const item of stripResult.stripped) {
+            console.log(chalk.green(`  ${item.oldFilename} → ${item.newFilename}`));
+          }
+        }
+
+        if (stripResult.errors.length > 0) {
+          console.log(chalk.bold.red('\n✗ Failed to strip:'));
+          for (const err of stripResult.errors) {
+            console.log(chalk.red(`  ${err.filename}: ${err.error}`));
+          }
+        }
+
+        if (stripResult.stripped.length === 0 && stripResult.errors.length === 0) {
+          console.log(chalk.gray('No orphaned numbered files to strip'));
+        }
+
+        console.log();
+      } catch (error: any) {
+        stripSpinner.fail('Strip orphans failed');
+        console.error(chalk.red(`\nError: ${error.message}`));
+        process.exit(1);
+      }
+    }
+
+    // Handle issue creation if flag is set
     if (options.create) {
       const createSpinner = ora('Creating new issues...').start();
 
