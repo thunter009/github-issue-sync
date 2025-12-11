@@ -132,6 +132,73 @@ export class SyncEngine {
   }
 
   /**
+   * Track a deleted issue to prevent accidental re-creation
+   */
+  private trackDeletedIssue(
+    state: SyncState,
+    issueNumber: number,
+    title?: string,
+    filename?: string
+  ): void {
+    if (!state.deletedIssues) {
+      state.deletedIssues = {};
+    }
+    state.deletedIssues[issueNumber] = {
+      deletedAt: new Date().toISOString(),
+      lastKnownTitle: title,
+      localFilename: filename,
+    };
+  }
+
+  /**
+   * Check if an issue was previously deleted
+   */
+  isDeletedIssue(issueNumber: number): boolean {
+    const state = this.loadState();
+    return !!(state.deletedIssues && state.deletedIssues[issueNumber]);
+  }
+
+  /**
+   * Get info about a deleted issue
+   */
+  getDeletedIssueInfo(issueNumber: number): { deletedAt: string; lastKnownTitle?: string; localFilename?: string } | null {
+    const state = this.loadState();
+    return state.deletedIssues?.[issueNumber] || null;
+  }
+
+  /**
+   * Get all deleted issues
+   */
+  getDeletedIssues(): Array<{ issueNumber: number; deletedAt: string; lastKnownTitle?: string; localFilename?: string }> {
+    const state = this.loadState();
+    if (!state.deletedIssues) return [];
+    return Object.entries(state.deletedIssues).map(([num, info]) => ({
+      issueNumber: parseInt(num, 10),
+      ...info,
+    }));
+  }
+
+  /**
+   * Clear a deleted issue (allow re-creation)
+   */
+  clearDeletedIssue(issueNumber: number): void {
+    const state = this.loadState();
+    if (state.deletedIssues && state.deletedIssues[issueNumber]) {
+      delete state.deletedIssues[issueNumber];
+      this.saveState(state);
+    }
+  }
+
+  /**
+   * Clear all deleted issues
+   */
+  clearAllDeletedIssues(): void {
+    const state = this.loadState();
+    state.deletedIssues = {};
+    this.saveState(state);
+  }
+
+  /**
    * Detect and handle orphaned tasks (local files where GitHub issue was deleted)
    */
   private async detectOrphanedTasks(
@@ -842,8 +909,15 @@ export class SyncEngine {
 
   /**
    * Preview which files would have issue numbers stripped (dry run)
+   * Returns orphaned files with info about whether they were previously synced/deleted
    */
-  async previewStripOrphanedFiles(): Promise<Array<{ issueNumber: number; filename: string; filepath: string }>> {
+  async previewStripOrphanedFiles(): Promise<Array<{
+    issueNumber: number;
+    filename: string;
+    filepath: string;
+    wasDeleted: boolean;
+    deletedAt?: string;
+  }>> {
     const tasksParser = this.registry.get('tasks') as import('./parsers').TasksParser | undefined;
     if (!tasksParser) {
       return [];
@@ -856,8 +930,31 @@ export class SyncEngine {
 
     const issueNumbers = numberedFiles.map(f => f.issueNumber);
     const existingIssues = await this.github.getIssues(issueNumbers);
+    const state = this.loadState();
 
-    return numberedFiles.filter(f => !existingIssues.has(f.issueNumber));
+    // Track newly discovered deleted issues
+    for (const file of numberedFiles) {
+      if (!existingIssues.has(file.issueNumber)) {
+        // Check if this was a previously synced issue that's now gone
+        const syncInfo = state.issues[file.issueNumber];
+        if (syncInfo && !state.deletedIssues?.[file.issueNumber]) {
+          // Was synced before but now 404 - track as deleted
+          this.trackDeletedIssue(state, file.issueNumber, undefined, file.filename);
+        }
+      }
+    }
+    this.saveState(state);
+
+    return numberedFiles
+      .filter(f => !existingIssues.has(f.issueNumber))
+      .map(f => {
+        const deletedInfo = state.deletedIssues?.[f.issueNumber];
+        return {
+          ...f,
+          wasDeleted: !!deletedInfo,
+          deletedAt: deletedInfo?.deletedAt,
+        };
+      });
   }
 
   /**
@@ -865,13 +962,17 @@ export class SyncEngine {
    * These files likely had numbers manually assigned (e.g., by AI agents) but were never synced.
    * Removes the number prefix so they can be created as new issues with GitHub-assigned numbers.
    * Note: Only works for tasks source (docs/tasks/)
+   *
+   * @param options.force - If true, strips even previously-deleted issues without warning
    */
-  async stripOrphanedFiles(): Promise<{
-    stripped: Array<{ oldFilename: string; newFilename: string }>;
+  async stripOrphanedFiles(options: { force?: boolean } = {}): Promise<{
+    stripped: Array<{ oldFilename: string; newFilename: string; wasDeleted: boolean }>;
+    skippedDeleted: Array<{ filename: string; issueNumber: number; deletedAt: string }>;
     errors: Array<{ filename: string; error: string }>;
   }> {
     const result = {
-      stripped: [] as Array<{ oldFilename: string; newFilename: string }>,
+      stripped: [] as Array<{ oldFilename: string; newFilename: string; wasDeleted: boolean }>,
+      skippedDeleted: [] as Array<{ filename: string; issueNumber: number; deletedAt: string }>,
       errors: [] as Array<{ filename: string; error: string }>,
     };
 
@@ -892,6 +993,7 @@ export class SyncEngine {
 
     // Check which issues actually exist on GitHub
     const existingIssues = await this.github.getIssues(issueNumbers);
+    const state = this.loadState();
 
     // Find files with numbers that don't exist on GitHub
     const orphanedFiles = numberedFiles.filter(f => !existingIssues.has(f.issueNumber));
@@ -901,13 +1003,35 @@ export class SyncEngine {
       return result;
     }
 
+    // Separate previously deleted from newly orphaned
+    const previouslyDeleted = orphanedFiles.filter(f => state.deletedIssues?.[f.issueNumber]);
+    const newlyOrphaned = orphanedFiles.filter(f => !state.deletedIssues?.[f.issueNumber]);
+
+    // Show summary
     console.log(chalk.yellow(`\nFound ${orphanedFiles.length} numbered file(s) without GitHub issues:`));
-    for (const file of orphanedFiles) {
-      console.log(chalk.gray(`  - #${file.issueNumber}: ${file.filename}`));
+
+    if (newlyOrphaned.length > 0) {
+      console.log(chalk.cyan(`\n  Newly orphaned (never synced or number invented):`));
+      for (const file of newlyOrphaned) {
+        console.log(chalk.gray(`    - #${file.issueNumber}: ${file.filename}`));
+      }
+    }
+
+    if (previouslyDeleted.length > 0) {
+      console.log(chalk.red(`\n  ⚠ Previously deleted from GitHub:`));
+      for (const file of previouslyDeleted) {
+        const info = state.deletedIssues![file.issueNumber];
+        const deletedDate = new Date(info.deletedAt).toLocaleDateString();
+        console.log(chalk.gray(`    - #${file.issueNumber}: ${file.filename} (deleted ${deletedDate})`));
+      }
+      if (!options.force) {
+        console.log(chalk.yellow(`\n  These were intentionally deleted. Use --force-create to override.`));
+      }
     }
     console.log();
 
-    for (const file of orphanedFiles) {
+    // Process newly orphaned files
+    for (const file of newlyOrphaned) {
       try {
         const newFilepath = await tasksParser.stripIssueNumber(file.filepath);
         const newFilename = path.basename(newFilepath);
@@ -915,6 +1039,7 @@ export class SyncEngine {
         result.stripped.push({
           oldFilename: file.filename,
           newFilename,
+          wasDeleted: false,
         });
 
         console.log(chalk.green(`  ✓ ${file.filename} → ${newFilename}`));
@@ -924,6 +1049,41 @@ export class SyncEngine {
           error: error.message,
         });
         console.log(chalk.red(`  ✗ ${file.filename}: ${error.message}`));
+      }
+    }
+
+    // Process previously deleted files (only if force)
+    for (const file of previouslyDeleted) {
+      const info = state.deletedIssues![file.issueNumber];
+
+      if (options.force) {
+        try {
+          const newFilepath = await tasksParser.stripIssueNumber(file.filepath);
+          const newFilename = path.basename(newFilepath);
+
+          // Clear from deleted issues since user is explicitly recreating
+          this.clearDeletedIssue(file.issueNumber);
+
+          result.stripped.push({
+            oldFilename: file.filename,
+            newFilename,
+            wasDeleted: true,
+          });
+
+          console.log(chalk.green(`  ✓ ${file.filename} → ${newFilename} (force)`));
+        } catch (error: any) {
+          result.errors.push({
+            filename: file.filename,
+            error: error.message,
+          });
+          console.log(chalk.red(`  ✗ ${file.filename}: ${error.message}`));
+        }
+      } else {
+        result.skippedDeleted.push({
+          filename: file.filename,
+          issueNumber: file.issueNumber,
+          deletedAt: info.deletedAt,
+        });
       }
     }
 

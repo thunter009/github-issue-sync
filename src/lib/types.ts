@@ -53,6 +53,12 @@ export interface SyncState {
     remoteHash: string;
     lastSyncedAt: string;
   }>;
+  /** Tracks issues that were deleted from GitHub to prevent accidental re-creation */
+  deletedIssues?: Record<number, {
+    deletedAt: string;
+    lastKnownTitle?: string;
+    localFilename?: string;
+  }>;
 }
 
 export interface SyncConflict {

@@ -230,6 +230,7 @@ program
   .option('--create', 'Create new GitHub issues from files without issue numbers')
   .option('--clean', 'Clean up orphaned local files (where GitHub issues were deleted)')
   .option('--strip-orphans', 'Strip issue numbers from files without corresponding GitHub issues')
+  .option('--force-create', 'Force strip/create even for previously deleted issues')
   .option('--file <path>', 'Sync only the specified file')
   .option('--issue <number>', 'Sync only the specified issue number', parseInt)
   .option('--source <types...>', 'Source types to sync (tasks|openspec|all)', ['all'])
@@ -293,13 +294,23 @@ program
 
       try {
         stripSpinner.stop();
-        const stripResult = await engine.stripOrphanedFiles();
+        const stripResult = await engine.stripOrphanedFiles({ force: options.forceCreate });
 
         if (stripResult.stripped.length > 0) {
           console.log(chalk.bold.cyan('\n✓ Stripped issue numbers:'));
           for (const item of stripResult.stripped) {
-            console.log(chalk.green(`  ${item.oldFilename} → ${item.newFilename}`));
+            const suffix = item.wasDeleted ? chalk.yellow(' (was deleted)') : '';
+            console.log(chalk.green(`  ${item.oldFilename} → ${item.newFilename}${suffix}`));
           }
+        }
+
+        if (stripResult.skippedDeleted.length > 0) {
+          console.log(chalk.bold.yellow('\n⚠ Skipped (previously deleted from GitHub):'));
+          for (const item of stripResult.skippedDeleted) {
+            const date = new Date(item.deletedAt).toLocaleDateString();
+            console.log(chalk.yellow(`  #${item.issueNumber}: ${item.filename} (deleted ${date})`));
+          }
+          console.log(chalk.gray('  Use --force-create to override'));
         }
 
         if (stripResult.errors.length > 0) {
@@ -309,7 +320,7 @@ program
           }
         }
 
-        if (stripResult.stripped.length === 0 && stripResult.errors.length === 0) {
+        if (stripResult.stripped.length === 0 && stripResult.errors.length === 0 && stripResult.skippedDeleted.length === 0) {
           console.log(chalk.gray('No orphaned numbered files to strip'));
         }
 
@@ -526,7 +537,7 @@ program
 
     try {
       // Check for orphaned files if --strip-orphans flag is set
-      let orphanedFiles: Array<{ issueNumber: number; filename: string; filepath: string }> = [];
+      let orphanedFiles: Array<{ issueNumber: number; filename: string; filepath: string; wasDeleted: boolean; deletedAt?: string }> = [];
       if (options.stripOrphans) {
         orphanedFiles = await engine.previewStripOrphanedFiles();
       }
@@ -542,13 +553,34 @@ program
       // Show orphaned files that would be stripped
       if (options.stripOrphans) {
         if (orphanedFiles.length > 0) {
-          console.log(chalk.yellow(`${orphanedFiles.length} file(s) would have numbers stripped:`));
-          for (const file of orphanedFiles) {
-            const newFilename = file.filename.replace(/^\d+-/, '');
-            console.log(chalk.gray(`  #${file.issueNumber}: ${file.filename} → ${newFilename}`));
+          const newlyOrphaned = orphanedFiles.filter(f => !f.wasDeleted);
+          const previouslyDeleted = orphanedFiles.filter(f => f.wasDeleted);
+
+          if (newlyOrphaned.length > 0) {
+            console.log(chalk.yellow(`${newlyOrphaned.length} file(s) would have numbers stripped:`));
+            for (const file of newlyOrphaned) {
+              const newFilename = file.filename.replace(/^\d+-/, '');
+              console.log(chalk.gray(`  #${file.issueNumber}: ${file.filename} → ${newFilename}`));
+            }
           }
-          console.log(chalk.gray('\nRun "sync --strip-orphans" to strip these numbers'));
-          console.log(chalk.gray('Run "sync --strip-orphans --create" to strip and create new issues\n'));
+
+          if (previouslyDeleted.length > 0) {
+            console.log(chalk.red(`\n⚠ ${previouslyDeleted.length} file(s) were previously deleted from GitHub:`));
+            for (const file of previouslyDeleted) {
+              const newFilename = file.filename.replace(/^\d+-/, '');
+              const date = file.deletedAt ? new Date(file.deletedAt).toLocaleDateString() : 'unknown';
+              console.log(chalk.gray(`  #${file.issueNumber}: ${file.filename} (deleted ${date})`));
+            }
+            console.log(chalk.yellow('  These will be skipped. Use --force-create to override.'));
+          }
+
+          console.log(chalk.gray('\nRun "sync --strip-orphans" to strip numbers'));
+          console.log(chalk.gray('Run "sync --strip-orphans --create" to strip and create new issues'));
+          if (previouslyDeleted.length > 0) {
+            console.log(chalk.gray('Run "sync --strip-orphans --force-create" to include deleted issues\n'));
+          } else {
+            console.log();
+          }
         } else {
           console.log(chalk.green('✓ No orphaned numbered files found\n'));
         }
