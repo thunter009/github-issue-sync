@@ -28,7 +28,9 @@ github-issue-sync sync
 - ✅ Bidirectional sync with conflict detection
 - ✅ Interactive conflict resolution
 - ✅ Label management with color schemes
-- 🚧 Test suite implementation
+- ✅ Test suite (130+ tests)
+- ✅ Issue creation from local files
+- ✅ Orphaned file detection and stripping
 - 📋 npm registry publication
 - 📋 GitHub Actions integration
 
@@ -123,6 +125,7 @@ github-issue-sync sync
 **Options:**
 - `--create` - Create new GitHub issues from files without issue numbers
 - `--clean` - Interactively clean up orphaned local files where GitHub issues were deleted
+- `--strip-orphans` - Strip issue numbers from files without corresponding GitHub issues
 - `--file <path>` - Sync only the specified file
 - `--issue <number>` - Sync only the specified issue number
 
@@ -132,6 +135,9 @@ github-issue-sync sync --create
 
 # Clean up orphaned files
 github-issue-sync sync --clean
+
+# Strip orphaned numbers and create new issues
+github-issue-sync sync --strip-orphans --create
 
 # Sync a single file
 github-issue-sync sync --file docs/tasks/active/002-feature.md
@@ -152,6 +158,9 @@ github-issue-sync status --file docs/tasks/active/002-feature.md
 
 # Check status of a single issue
 github-issue-sync status --issue 123
+
+# Preview which files would have numbers stripped
+github-issue-sync status --strip-orphans
 ```
 
 ### `push`
@@ -311,7 +320,50 @@ https://github.com/settings/tokens/new
 
 ### "Issue doesn't exist on GitHub"
 
-The sync tool only updates existing issues. It doesn't create new issues (yet). Manually create the issue on GitHub first.
+If you have files with issue numbers that don't exist on GitHub (orphaned files):
+
+```bash
+# Preview what would be stripped
+github-issue-sync status --strip-orphans
+
+# Strip numbers and create new issues with GitHub-assigned numbers
+github-issue-sync sync --strip-orphans --create
+```
+
+## Creating New Issues
+
+Create issues from local markdown files:
+
+1. **Create a file without an issue number:**
+   ```bash
+   docs/tasks/backlog/my-new-feature.md
+   ```
+
+2. **Run sync with --create:**
+   ```bash
+   github-issue-sync sync --create
+   ```
+
+3. **Tool creates issue and renames file:**
+   ```bash
+   # my-new-feature.md → 045-my-new-feature.md
+   ```
+
+GitHub assigns the issue number - the tool never invents numbers.
+
+### Handling AI-Generated Numbers
+
+If your AI coding agent creates files with arbitrary issue numbers (e.g., `011-feature.md`), but those numbers don't exist on GitHub:
+
+```bash
+# 1. Preview orphaned files
+github-issue-sync status --strip-orphans
+
+# 2. Strip numbers and create with real GitHub numbers
+github-issue-sync sync --strip-orphans --create
+```
+
+This renames `011-feature.md` → `feature.md` → creates issue → `045-feature.md`
 
 ## Development
 

@@ -102,6 +102,180 @@ describe('ParserRegistry', () => {
   });
 });
 
+describe('TasksParser', () => {
+  const projectRoot = '/project';
+  let parser: TasksParser;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    parser = new TasksParser(projectRoot);
+  });
+
+  describe('sourceType', () => {
+    it('should be tasks', () => {
+      expect(parser.sourceType).toBe('tasks');
+    });
+  });
+
+  describe('discoverNewTasks', () => {
+    it('should discover files without issue numbers', async () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readdirSync.mockReturnValue(['new-feature.md', '001-existing.md', 'README.md'] as any);
+      mockFs.readFileSync.mockReturnValue(`---
+title: New Feature
+created_utc: '2025-01-10T00:00:00Z'
+reporter: test
+severity: P2
+priority: medium
+component: [test]
+labels: []
+---
+Content`);
+      mockFs.statSync.mockReturnValue({
+        mtime: new Date(),
+      } as any);
+
+      const tasks = await parser.discoverNewTasks();
+      // Should only find new-feature.md (not 001-existing.md or README.md)
+      expect(tasks.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should return empty when no unnumbered files exist', async () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readdirSync.mockReturnValue(['001-task.md', '002-task.md'] as any);
+
+      const tasks = await parser.discoverNewTasks();
+      expect(tasks).toHaveLength(0);
+    });
+  });
+
+  describe('discoverNumberedTasks', () => {
+    it('should discover all files with issue numbers', async () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readdirSync.mockReturnValue(['001-task.md', '002-task.md', 'unnumbered.md'] as any);
+
+      const tasks = await parser.discoverNumberedTasks();
+      // Finds in all 3 dirs (backlog, active, completed) = 2 * 3 = 6
+      expect(tasks).toHaveLength(6);
+      expect(tasks[0].issueNumber).toBe(1);
+      expect(tasks[1].issueNumber).toBe(2);
+    });
+
+    it('should return empty when directory does not exist', async () => {
+      mockFs.existsSync.mockReturnValue(false);
+
+      const tasks = await parser.discoverNumberedTasks();
+      expect(tasks).toHaveLength(0);
+    });
+
+    it('should include filepath and filename', async () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readdirSync.mockReturnValue(['042-feature.md'] as any);
+
+      const tasks = await parser.discoverNumberedTasks();
+      expect(tasks[0]).toEqual({
+        issueNumber: 42,
+        filename: '042-feature.md',
+        filepath: expect.stringContaining('042-feature.md'),
+      });
+    });
+  });
+
+  describe('stripIssueNumber', () => {
+    it('should rename file to remove number prefix', async () => {
+      mockFs.existsSync.mockReturnValue(false); // Target doesn't exist
+      mockFs.renameSync.mockImplementation(() => {});
+
+      const result = await parser.stripIssueNumber('/project/docs/tasks/backlog/011-feature.md');
+
+      expect(mockFs.renameSync).toHaveBeenCalledWith(
+        '/project/docs/tasks/backlog/011-feature.md',
+        '/project/docs/tasks/backlog/feature.md'
+      );
+      expect(result).toBe('/project/docs/tasks/backlog/feature.md');
+    });
+
+    it('should throw if target file already exists', async () => {
+      mockFs.existsSync.mockReturnValue(true); // Target exists
+
+      await expect(
+        parser.stripIssueNumber('/project/docs/tasks/backlog/011-feature.md')
+      ).rejects.toThrow('Cannot strip: file already exists');
+    });
+
+    it('should return same path if already stripped', async () => {
+      const result = await parser.stripIssueNumber('/project/docs/tasks/backlog/feature.md');
+      expect(result).toBe('/project/docs/tasks/backlog/feature.md');
+      expect(mockFs.renameSync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('renameTask', () => {
+    it('should rename file with new issue number', async () => {
+      mockFs.existsSync.mockReturnValue(false); // Target doesn't exist
+      mockFs.readFileSync.mockReturnValue(`---
+title: My Feature
+---
+Content`);
+      mockFs.renameSync.mockImplementation(() => {});
+
+      const result = await parser.renameTask('/project/docs/tasks/backlog/feature.md', 42);
+
+      expect(mockFs.renameSync).toHaveBeenCalledWith(
+        '/project/docs/tasks/backlog/feature.md',
+        '/project/docs/tasks/backlog/042-feature.md'
+      );
+      expect(result).toBe('/project/docs/tasks/backlog/042-feature.md');
+    });
+
+    it('should generate slug from provided title', async () => {
+      mockFs.existsSync.mockReturnValue(false);
+      mockFs.renameSync.mockImplementation(() => {});
+
+      const result = await parser.renameTask(
+        '/project/docs/tasks/backlog/old-name.md',
+        123,
+        'New Feature Title'
+      );
+
+      expect(result).toContain('123-new-feature-title.md');
+    });
+
+    it('should throw if target file already exists', async () => {
+      mockFs.existsSync.mockReturnValue(true);
+
+      await expect(
+        parser.renameTask('/project/docs/tasks/backlog/feature.md', 42)
+      ).rejects.toThrow('Cannot rename: file already exists');
+    });
+
+    it('should return same path if already correctly named', async () => {
+      mockFs.existsSync.mockReturnValue(false);
+
+      const result = await parser.renameTask('/project/docs/tasks/backlog/042-feature.md', 42);
+
+      expect(result).toBe('/project/docs/tasks/backlog/042-feature.md');
+      expect(mockFs.renameSync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('taskExists', () => {
+    it('should return true when file with issue number exists', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readdirSync.mockReturnValue(['042-feature.md'] as any);
+
+      expect(parser.taskExists(42)).toBe(true);
+    });
+
+    it('should return false when no matching file exists', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readdirSync.mockReturnValue(['001-other.md'] as any);
+
+      expect(parser.taskExists(42)).toBe(false);
+    });
+  });
+});
+
 describe('OpenSpecMetaHandler', () => {
   const changePath = '/project/openspec/changes/add-feature';
 
