@@ -7,8 +7,7 @@ priority: medium
 type: bug
 component:
   - cli
-labels:
-  - 'test:label'
+labels: []
 status: backlog
 ---
 # Support running CLI from any directory

@@ -9,11 +9,10 @@
 pnpm install
 pnpm link --global
 
-# Set up environment
-export GITHUB_TOKEN=your_token_here
-export GITHUB_REPO=owner/repo
+# Authenticate (uses gh CLI keyring)
+gh auth login
 
-# Run sync
+# Run sync (repo auto-detected from git remote)
 github-issue-sync sync
 ```
 
@@ -247,12 +246,26 @@ console.log(`Conflicts: ${result.conflicts.length}`);
 
 ## Configuration
 
+### Authentication
+
+**Preferred: gh CLI** (uses secure keyring)
+```bash
+gh auth login
+```
+
+**Fallback: Environment variable** (for CI/CD)
+```bash
+export GITHUB_TOKEN=ghp_abc123...
+```
+
 ### Environment Variables
 
 | Variable | Required | Description | Example |
 |----------|----------|-------------|---------|
-| `GITHUB_TOKEN` | Yes | Personal access token | `ghp_abc123...` |
-| `GITHUB_REPO` | Yes | Repository (owner/name) | `thunter009/my-repo` |
+| `GITHUB_TOKEN` | No* | Fallback if gh CLI not available | `ghp_abc123...` |
+| `GITHUB_REPO` | No* | Repository (auto-detected from git remote) | `thunter009/my-repo` |
+
+*Auth required via either `gh auth login` or `GITHUB_TOKEN`. Repo auto-detected from git remote if not set.
 
 ### Directory Structure
 
@@ -277,12 +290,14 @@ Files must follow naming pattern: `NNN-slug.md` where `NNN` is the issue number.
 
 ## Troubleshooting
 
-### "GITHUB_TOKEN not set"
+### "No GitHub authentication found"
 
 ```bash
-# Add to .env.local
-echo "GITHUB_TOKEN=ghp_your_token" >> .env.local
-echo "GITHUB_REPO=owner/repo" >> .env.local
+# Preferred: use gh CLI
+gh auth login
+
+# Or set env var (for CI/CD)
+export GITHUB_TOKEN=ghp_your_token
 ```
 
 ### "Missing required frontmatter fields"
