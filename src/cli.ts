@@ -230,7 +230,7 @@ program
   .option('--create', 'Create new GitHub issues from files without issue numbers')
   .option('--clean', 'Clean up orphaned local files (where GitHub issues were deleted)')
   .option('--strip-orphans', 'Strip issue numbers from files without corresponding GitHub issues')
-  .option('--force-create', 'Force strip/create even for previously deleted issues')
+  .option('--force', 'Include previously deleted issues when stripping orphans')
   .option('--file <path>', 'Sync only the specified file')
   .option('--issue <number>', 'Sync only the specified issue number', parseInt)
   .option('--source <types...>', 'Source types to sync (tasks|openspec|all)', ['all'])
@@ -294,7 +294,7 @@ program
 
       try {
         stripSpinner.stop();
-        const stripResult = await engine.stripOrphanedFiles({ force: options.forceCreate });
+        const stripResult = await engine.stripOrphanedFiles({ force: options.force });
 
         if (stripResult.stripped.length > 0) {
           console.log(chalk.bold.cyan('\n✓ Stripped issue numbers:'));
@@ -310,7 +310,7 @@ program
             const date = new Date(item.deletedAt).toLocaleDateString();
             console.log(chalk.yellow(`  #${item.issueNumber}: ${item.filename} (deleted ${date})`));
           }
-          console.log(chalk.gray('  Use --force-create to override'));
+          console.log(chalk.gray('  Use --force to override'));
         }
 
         if (stripResult.errors.length > 0) {
@@ -571,13 +571,13 @@ program
               const date = file.deletedAt ? new Date(file.deletedAt).toLocaleDateString() : 'unknown';
               console.log(chalk.gray(`  #${file.issueNumber}: ${file.filename} (deleted ${date})`));
             }
-            console.log(chalk.yellow('  These will be skipped. Use --force-create to override.'));
+            console.log(chalk.yellow('  These will be skipped. Use --force to override.'));
           }
 
           console.log(chalk.gray('\nRun "sync --strip-orphans" to strip numbers'));
           console.log(chalk.gray('Run "sync --strip-orphans --create" to strip and create new issues'));
           if (previouslyDeleted.length > 0) {
-            console.log(chalk.gray('Run "sync --strip-orphans --force-create" to include deleted issues\n'));
+            console.log(chalk.gray('Run "sync --strip-orphans --force" to include deleted issues\n'));
           } else {
             console.log();
           }

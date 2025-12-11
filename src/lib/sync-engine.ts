@@ -1025,7 +1025,7 @@ export class SyncEngine {
         console.log(chalk.gray(`    - #${file.issueNumber}: ${file.filename} (deleted ${deletedDate})`));
       }
       if (!options.force) {
-        console.log(chalk.yellow(`\n  These were intentionally deleted. Use --force-create to override.`));
+        console.log(chalk.yellow(`\n  These were intentionally deleted. Use --force to override.`));
       }
     }
     console.log();
