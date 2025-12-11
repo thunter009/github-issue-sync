@@ -10,14 +10,15 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
 import path from 'path';
+import fs from 'fs';
 import { config } from 'dotenv';
 import { execSync } from 'child_process';
 import { GitHubClient } from './lib/github-client';
-import { MarkdownParser } from './lib/markdown-parser';
 import { FieldMapper } from './lib/field-mapper';
 import { SyncEngine } from './lib/sync-engine';
 import { ConflictResolver } from './lib/conflict-resolver';
 import { SyncFilter } from './lib/types';
+import { ParserRegistry, TasksParser, OpenSpecParser, SourceType } from './lib/parsers';
 
 // Load environment variables from target project directory
 config({ path: path.join(process.cwd(), '.env.local') });
@@ -47,27 +48,60 @@ function detectGitHubRepo(): string | null {
 }
 
 // Get environment variables
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const GITHUB_REPO = process.env.GITHUB_REPO || detectGitHubRepo();
+
+/**
+ * Get GitHub token from gh CLI or env var
+ */
+function getGitHubToken(): string | null {
+  // Try gh CLI first (uses keyring)
+  try {
+    const token = execSync('gh auth token', {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    if (token) return token;
+  } catch {
+    // gh CLI not available or not authenticated
+  }
+
+  // Fall back to env var (for CI/CD)
+  return process.env.GITHUB_TOKEN || null;
+}
 const IGNORED_DIRS_ENV = process.env.SYNC_IGNORE_DIRS?.split(',').map(d => d.trim()) || [];
+
+/**
+ * Parse source types from CLI option
+ */
+function parseSourceTypes(sources?: string[]): (SourceType | 'all')[] {
+  if (!sources || sources.length === 0 || sources.includes('all')) {
+    return ['all'];
+  }
+  return sources.filter((s): s is SourceType | 'all' =>
+    s === 'tasks' || s === 'openspec' || s === 'all'
+  );
+}
 
 /**
  * Initialize sync components
  */
 function initializeSync(
   ignoredDirs: string[] = [],
-  keepTitlePrefixes: boolean = false
+  keepTitlePrefixes: boolean = false,
+  sources: (SourceType | 'all')[] = ['all']
 ): {
   github: GitHubClient;
-  parser: MarkdownParser;
+  registry: ParserRegistry;
   mapper: FieldMapper;
   engine: SyncEngine;
   resolver: ConflictResolver;
 } {
-  if (!GITHUB_TOKEN) {
-    console.error(chalk.red('Error: GITHUB_TOKEN environment variable not set'));
-    console.error(chalk.gray('Set it in your .env.local file or export it:'));
-    console.error(chalk.gray('  export GITHUB_TOKEN=ghp_your_token_here'));
+  const token = getGitHubToken();
+  if (!token) {
+    console.error(chalk.red('Error: No GitHub authentication found'));
+    console.error(chalk.gray('Either run:'));
+    console.error(chalk.gray('  gh auth login'));
+    console.error(chalk.gray('Or set GITHUB_TOKEN env var (for CI/CD)'));
     process.exit(1);
   }
 
@@ -80,13 +114,37 @@ function initializeSync(
     process.exit(1);
   }
 
-  const github = new GitHubClient(GITHUB_TOKEN, GITHUB_REPO);
-  const parser = new MarkdownParser(PROJECT_ROOT, ignoredDirs);
+  const github = new GitHubClient(token, GITHUB_REPO);
   const mapper = new FieldMapper({ keepTitlePrefixes });
-  const engine = new SyncEngine(github, parser, mapper, PROJECT_ROOT, GITHUB_REPO);
+
+  // Create parser registry and register enabled parsers
+  const registry = new ParserRegistry();
+  const includeAll = sources.includes('all');
+
+  // Register tasks parser if enabled
+  if (includeAll || sources.includes('tasks')) {
+    registry.register(new TasksParser(PROJECT_ROOT, ignoredDirs));
+  }
+
+  // Register openspec parser if enabled and openspec directory exists
+  if (includeAll || sources.includes('openspec')) {
+    const openspecDir = path.join(PROJECT_ROOT, 'openspec', 'changes');
+    if (fs.existsSync(openspecDir)) {
+      registry.register(new OpenSpecParser(PROJECT_ROOT));
+    }
+  }
+
+  // Ensure at least one parser is registered
+  if (registry.getAll().length === 0) {
+    console.error(chalk.red('Error: No sources available to sync'));
+    console.error(chalk.gray('No tasks directory or openspec/changes directory found.'));
+    process.exit(1);
+  }
+
+  const engine = new SyncEngine(github, registry, mapper, PROJECT_ROOT, GITHUB_REPO);
   const resolver = new ConflictResolver(mapper);
 
-  return { github, parser, mapper, engine, resolver };
+  return { github, registry, mapper, engine, resolver };
 }
 
 /**
@@ -102,7 +160,7 @@ async function verifyAccess(github: GitHubClient): Promise<void> {
       spinner.fail('GitHub access verification failed');
       console.error(chalk.red('\nError: Unable to access repository'));
       console.error(chalk.gray(`Repo: ${GITHUB_REPO}`));
-      console.error(chalk.gray('Check your GITHUB_TOKEN permissions'));
+      console.error(chalk.gray('Check your gh auth or GITHUB_TOKEN permissions'));
       process.exit(1);
     }
 
@@ -171,8 +229,11 @@ program
   .description('Bidirectional sync between local and GitHub')
   .option('--create', 'Create new GitHub issues from files without issue numbers')
   .option('--clean', 'Clean up orphaned local files (where GitHub issues were deleted)')
+  .option('--strip-orphans', 'Strip issue numbers from files without corresponding GitHub issues')
+  .option('--force', 'Include previously deleted issues when stripping orphans')
   .option('--file <path>', 'Sync only the specified file')
   .option('--issue <number>', 'Sync only the specified issue number', parseInt)
+  .option('--source <types...>', 'Source types to sync (tasks|openspec|all)', ['all'])
   .option('--ignore-dir <dirs...>', 'Directories to ignore (e.g., completed active)')
   .option('--keep-title-prefixes', 'Keep [#NNN] prefixes in GitHub issue titles')
   .action(async (options) => {
@@ -182,7 +243,8 @@ program
       console.log(chalk.gray(`Ignoring directories: ${ignoredDirs.join(', ')}`));
     }
 
-    const { github, engine, resolver } = initializeSync(ignoredDirs, options.keepTitlePrefixes);
+    const sourceTypes = parseSourceTypes(options.source);
+    const { github, engine, resolver } = initializeSync(ignoredDirs, options.keepTitlePrefixes, sourceTypes);
 
     await verifyAccess(github);
 
@@ -226,7 +288,51 @@ program
       }
     }
 
-    // Handle issue creation first if flag is set
+    // Handle stripping orphaned issue numbers if flag is set
+    if (options.stripOrphans) {
+      const stripSpinner = ora('Checking for orphaned numbered files...').start();
+
+      try {
+        stripSpinner.stop();
+        const stripResult = await engine.stripOrphanedFiles({ force: options.force });
+
+        if (stripResult.stripped.length > 0) {
+          console.log(chalk.bold.cyan('\n✓ Stripped issue numbers:'));
+          for (const item of stripResult.stripped) {
+            const suffix = item.wasDeleted ? chalk.yellow(' (was deleted)') : '';
+            console.log(chalk.green(`  ${item.oldFilename} → ${item.newFilename}${suffix}`));
+          }
+        }
+
+        if (stripResult.skippedDeleted.length > 0) {
+          console.log(chalk.bold.yellow('\n⚠ Skipped (previously deleted from GitHub):'));
+          for (const item of stripResult.skippedDeleted) {
+            const date = new Date(item.deletedAt).toLocaleDateString();
+            console.log(chalk.yellow(`  #${item.issueNumber}: ${item.filename} (deleted ${date})`));
+          }
+          console.log(chalk.gray('  Use --force to override'));
+        }
+
+        if (stripResult.errors.length > 0) {
+          console.log(chalk.bold.red('\n✗ Failed to strip:'));
+          for (const err of stripResult.errors) {
+            console.log(chalk.red(`  ${err.filename}: ${err.error}`));
+          }
+        }
+
+        if (stripResult.stripped.length === 0 && stripResult.errors.length === 0 && stripResult.skippedDeleted.length === 0) {
+          console.log(chalk.gray('No orphaned numbered files to strip'));
+        }
+
+        console.log();
+      } catch (error: any) {
+        stripSpinner.fail('Strip orphans failed');
+        console.error(chalk.red(`\nError: ${error.message}`));
+        process.exit(1);
+      }
+    }
+
+    // Handle issue creation if flag is set
     if (options.create) {
       const createSpinner = ora('Creating new issues...').start();
 
@@ -316,11 +422,13 @@ program
   .description('Push local changes to GitHub (one-way)')
   .option('--file <path>', 'Push only the specified file')
   .option('--issue <number>', 'Push only the specified issue number', parseInt)
+  .option('--source <types...>', 'Source types to sync (tasks|openspec|all)', ['all'])
   .option('--ignore-dir <dirs...>', 'Directories to ignore (e.g., completed active)')
   .option('--keep-title-prefixes', 'Keep [#NNN] prefixes in GitHub issue titles')
   .action(async (options) => {
     const ignoredDirs = [...IGNORED_DIRS_ENV, ...(options.ignoreDir || [])];
-    const { github, engine } = initializeSync(ignoredDirs, options.keepTitlePrefixes);
+    const sourceTypes = parseSourceTypes(options.source);
+    const { github, engine } = initializeSync(ignoredDirs, options.keepTitlePrefixes, sourceTypes);
 
     await verifyAccess(github);
 
@@ -358,10 +466,12 @@ program
   .description('Pull changes from GitHub (one-way)')
   .option('--file <path>', 'Pull only the specified file')
   .option('--issue <number>', 'Pull only the specified issue number', parseInt)
+  .option('--source <types...>', 'Source types to sync (tasks|openspec|all)', ['all'])
   .option('--ignore-dir <dirs...>', 'Directories to ignore (e.g., completed active)')
   .action(async (options) => {
     const ignoredDirs = [...IGNORED_DIRS_ENV, ...(options.ignoreDir || [])];
-    const { github, engine } = initializeSync(ignoredDirs);
+    const sourceTypes = parseSourceTypes(options.source);
+    const { github, engine } = initializeSync(ignoredDirs, false, sourceTypes);
 
     await verifyAccess(github);
 
@@ -399,10 +509,13 @@ program
   .description('Show sync status without making changes')
   .option('--file <path>', 'Check status of only the specified file')
   .option('--issue <number>', 'Check status of only the specified issue number', parseInt)
+  .option('--source <types...>', 'Source types to sync (tasks|openspec|all)', ['all'])
   .option('--ignore-dir <dirs...>', 'Directories to ignore (e.g., completed active)')
+  .option('--strip-orphans', 'Show which files would have issue numbers stripped')
   .action(async (options) => {
     const ignoredDirs = [...IGNORED_DIRS_ENV, ...(options.ignoreDir || [])];
-    const { github, engine } = initializeSync(ignoredDirs);
+    const sourceTypes = parseSourceTypes(options.source);
+    const { github, engine } = initializeSync(ignoredDirs, false, sourceTypes);
 
     await verifyAccess(github);
 
@@ -423,6 +536,12 @@ program
     const spinner = ora('Checking status...').start();
 
     try {
+      // Check for orphaned files if --strip-orphans flag is set
+      let orphanedFiles: Array<{ issueNumber: number; filename: string; filepath: string; wasDeleted: boolean; deletedAt?: string }> = [];
+      if (options.stripOrphans) {
+        orphanedFiles = await engine.previewStripOrphanedFiles();
+      }
+
       const { toSync, conflicts } = await engine.status(filter);
 
       spinner.succeed('Status check complete');
@@ -430,6 +549,42 @@ program
       console.log(chalk.bold('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
       console.log(chalk.bold.cyan('Sync Status'));
       console.log(chalk.bold('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'));
+
+      // Show orphaned files that would be stripped
+      if (options.stripOrphans) {
+        if (orphanedFiles.length > 0) {
+          const newlyOrphaned = orphanedFiles.filter(f => !f.wasDeleted);
+          const previouslyDeleted = orphanedFiles.filter(f => f.wasDeleted);
+
+          if (newlyOrphaned.length > 0) {
+            console.log(chalk.yellow(`${newlyOrphaned.length} file(s) would have numbers stripped:`));
+            for (const file of newlyOrphaned) {
+              const newFilename = file.filename.replace(/^\d+-/, '');
+              console.log(chalk.gray(`  #${file.issueNumber}: ${file.filename} → ${newFilename}`));
+            }
+          }
+
+          if (previouslyDeleted.length > 0) {
+            console.log(chalk.red(`\n⚠ ${previouslyDeleted.length} file(s) were previously deleted from GitHub:`));
+            for (const file of previouslyDeleted) {
+              const newFilename = file.filename.replace(/^\d+-/, '');
+              const date = file.deletedAt ? new Date(file.deletedAt).toLocaleDateString() : 'unknown';
+              console.log(chalk.gray(`  #${file.issueNumber}: ${file.filename} (deleted ${date})`));
+            }
+            console.log(chalk.yellow('  These will be skipped. Use --force to override.'));
+          }
+
+          console.log(chalk.gray('\nRun "sync --strip-orphans" to strip numbers'));
+          console.log(chalk.gray('Run "sync --strip-orphans --create" to strip and create new issues'));
+          if (previouslyDeleted.length > 0) {
+            console.log(chalk.gray('Run "sync --strip-orphans --force" to include deleted issues\n'));
+          } else {
+            console.log();
+          }
+        } else {
+          console.log(chalk.green('✓ No orphaned numbered files found\n'));
+        }
+      }
 
       if (toSync.length === 0 && conflicts.length === 0) {
         console.log(chalk.green('✓ Everything is in sync'));
@@ -463,8 +618,10 @@ program
 program
   .command('create')
   .description('Create new GitHub issues from files without issue numbers')
-  .action(async () => {
-    const { github, engine } = initializeSync();
+  .option('--source <types...>', 'Source types to create from (tasks|openspec|all)', ['all'])
+  .action(async (options) => {
+    const sourceTypes = parseSourceTypes(options.source);
+    const { github, engine } = initializeSync([], false, sourceTypes);
 
     await verifyAccess(github);
 

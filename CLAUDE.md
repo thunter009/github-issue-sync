@@ -27,9 +27,12 @@ github-issue-sync sync --issue 123  # Sync specific issue
 github-issue-sync pull --issue 789  # Pull issue from GitHub (creates file if needed)
 github-issue-sync push --file docs/tasks/backlog/456-bug.md  # Push file to GitHub
 
-# Required environment variables
-GITHUB_TOKEN=<token>      # GitHub PAT with repo scope
-GITHUB_REPO=owner/repo    # Repository format
+# Authentication (choose one)
+gh auth login             # Preferred: uses gh CLI keyring
+GITHUB_TOKEN=<token>      # Fallback: env var for CI/CD
+
+# Optional env var (auto-detected from git remote)
+GITHUB_REPO=owner/repo    # Only if no git remote
 
 # Pre-commit hooks
 # Tests run automatically before commits
@@ -80,5 +83,5 @@ Labels auto-created with consistent colors:
 - Status determines directory: backlog/, active/, or completed/
 - Metadata preserved in GitHub via HTML comments in issue body
 - API requests chunked (10 at a time) for rate limiting
-- Environment vars loaded from `.env.local` > `.env` > process env
+- Auth: tries `gh auth token` first, then GITHUB_TOKEN env var
 - use pnpm for this repo instead of npm

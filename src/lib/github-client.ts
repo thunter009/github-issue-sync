@@ -219,7 +219,7 @@ export class GitHubClient {
   }
 
   /**
-   * Fetch all labels and populate cache
+   * Fetch all labels and populate cache (with pagination)
    */
   private async fetchLabelCache(): Promise<void> {
     if (this.labelCache) return; // Already cached
@@ -227,14 +227,20 @@ export class GitHubClient {
     this.labelCache = new Map();
 
     try {
-      const { data } = await this.octokit.issues.listLabelsForRepo({
-        owner: this.owner,
-        repo: this.repo,
-        per_page: 100,
-      });
+      // Paginate through all labels
+      const iterator = this.octokit.paginate.iterator(
+        this.octokit.issues.listLabelsForRepo,
+        {
+          owner: this.owner,
+          repo: this.repo,
+          per_page: 100,
+        }
+      );
 
-      for (const label of data) {
-        this.labelCache.set(label.name, { color: label.color });
+      for await (const { data: labels } of iterator) {
+        for (const label of labels) {
+          this.labelCache.set(label.name, { color: label.color });
+        }
       }
     } catch (error) {
       // If we can't fetch labels, start with empty cache
@@ -263,13 +269,22 @@ export class GitHubClient {
         cached.color = labelColor; // Update cache
       }
     } else {
-      // Label doesn't exist, create it
-      await this.octokit.issues.createLabel({
-        owner: this.owner,
-        repo: this.repo,
-        name,
-        color: labelColor,
-      });
+      // Label doesn't exist in cache, try to create it
+      try {
+        await this.octokit.issues.createLabel({
+          owner: this.owner,
+          repo: this.repo,
+          name,
+          color: labelColor,
+        });
+      } catch (error: any) {
+        // Handle case where label exists but wasn't in cache (pagination limit)
+        if (error.status === 422 && JSON.stringify(error.response?.data)?.includes('already_exists')) {
+          // Label exists, just add to cache
+        } else {
+          throw error;
+        }
+      }
       // Add to cache
       this.labelCache?.set(name, { color: labelColor });
     }

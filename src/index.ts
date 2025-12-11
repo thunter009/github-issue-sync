@@ -10,4 +10,7 @@ export { FieldMapper } from './lib/field-mapper';
 export { SyncEngine } from './lib/sync-engine';
 export { ConflictResolver } from './lib/conflict-resolver';
 
+// Parser module exports
+export * from './lib/parsers';
+
 export * from './lib/types';

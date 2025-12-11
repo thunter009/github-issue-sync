@@ -1,19 +1,32 @@
 import fs from 'fs';
 import { SyncEngine } from '../../src/lib/sync-engine';
 import { GitHubClient } from '../../src/lib/github-client';
-import { MarkdownParser } from '../../src/lib/markdown-parser';
 import { FieldMapper } from '../../src/lib/field-mapper';
 import { TaskDocument, GitHubIssueData } from '../../src/lib/types';
+import { ParserRegistry, ISourceParser, TaskStatus } from '../../src/lib/parsers';
 
 // Mock dependencies
 jest.mock('fs');
 jest.mock('../../src/lib/github-client');
-jest.mock('../../src/lib/markdown-parser');
+
+// Type for mock parser with jest mock functions
+type MockParser = {
+  sourceType: 'tasks';
+  discoverTasks: jest.Mock;
+  discoverNewTasks: jest.Mock;
+  writeTask: jest.Mock;
+  createTask: jest.Mock;
+  taskExists: jest.Mock;
+  resolveStatusConflict: jest.Mock;
+  renameTask: jest.Mock;
+  moveTask: jest.Mock;
+};
 
 describe('SyncEngine', () => {
   let engine: SyncEngine;
   let mockGitHub: jest.Mocked<GitHubClient>;
-  let mockParser: jest.Mocked<MarkdownParser>;
+  let mockParser: MockParser;
+  let registry: ParserRegistry;
   let mapper: FieldMapper;
   const projectRoot = '/test/project';
 
@@ -25,16 +38,23 @@ describe('SyncEngine', () => {
     } as any;
 
     mockParser = {
+      sourceType: 'tasks',
       discoverTasks: jest.fn(),
+      discoverNewTasks: jest.fn().mockResolvedValue([]),
       writeTask: jest.fn(),
-      resolveStatusConflict: jest.fn().mockImplementation((task) => task.frontmatter.status || 'backlog'),
-      renameTask: jest.fn().mockImplementation(async (filepath, _issueNum) => filepath),
-      moveTask: jest.fn().mockImplementation(async (task, _status) => task),
-    } as any;
+      createTask: jest.fn(),
+      taskExists: jest.fn().mockReturnValue(false),
+      resolveStatusConflict: jest.fn().mockImplementation((task: TaskDocument) => task.frontmatter.status || 'backlog'),
+      renameTask: jest.fn().mockImplementation(async (filepath: string, _issueNum: number) => filepath),
+      moveTask: jest.fn().mockImplementation(async (task: TaskDocument, _status: TaskStatus) => task),
+    };
+
+    registry = new ParserRegistry();
+    registry.register(mockParser as unknown as ISourceParser);
 
     mapper = new FieldMapper();
 
-    engine = new SyncEngine(mockGitHub, mockParser, mapper, projectRoot, 'owner/repo');
+    engine = new SyncEngine(mockGitHub, registry, mapper, projectRoot, 'owner/repo');
 
     (fs.existsSync as jest.Mock).mockReturnValue(false);
     (fs.writeFileSync as jest.Mock).mockImplementation(() => {});

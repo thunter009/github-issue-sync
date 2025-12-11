@@ -7,7 +7,6 @@ import path from 'path';
 import { execSync } from 'child_process';
 import chalk from 'chalk';
 import { GitHubClient } from './github-client';
-import { MarkdownParser } from './markdown-parser';
 import { FieldMapper } from './field-mapper';
 import {
   SyncState,
@@ -18,26 +17,88 @@ import {
   GitHubIssueData,
   SyncFilter,
 } from './types';
+import { ParserRegistry, ISourceParser, SourceType } from './parsers';
 
 export class SyncEngine {
   private github: GitHubClient;
-  private parser: MarkdownParser;
+  private registry: ParserRegistry;
   private mapper: FieldMapper;
   private stateFile: string;
   private githubRepo: string;
 
   constructor(
     github: GitHubClient,
-    parser: MarkdownParser,
+    registry: ParserRegistry,
     mapper: FieldMapper,
     projectRoot: string,
     githubRepo: string
   ) {
     this.github = github;
-    this.parser = parser;
+    this.registry = registry;
     this.mapper = mapper;
     this.stateFile = path.join(projectRoot, '.sync-state.json');
     this.githubRepo = githubRepo;
+  }
+
+  /**
+   * Get parser for a task based on its sourceType
+   */
+  private getParserForTask(task: TaskDocument): ISourceParser {
+    const sourceType = task.sourceType || 'tasks';
+    const parser = this.registry.get(sourceType);
+    if (!parser) {
+      throw new Error(`No parser registered for source type: ${sourceType}`);
+    }
+    return parser;
+  }
+
+  /**
+   * Discover tasks from all registered parsers (or filtered by source types)
+   */
+  private async discoverAllTasks(
+    filter?: SyncFilter,
+    sourceTypes?: (SourceType | 'all')[]
+  ): Promise<TaskDocument[]> {
+    const parsers = sourceTypes
+      ? this.registry.getByTypes(sourceTypes)
+      : this.registry.getAll();
+
+    const allTasks: TaskDocument[] = [];
+
+    for (const parser of parsers) {
+      try {
+        const tasks = await parser.discoverTasks(filter);
+        allTasks.push(...tasks);
+      } catch (error: any) {
+        // If filtering by filepath and this parser doesn't handle it, skip
+        if (filter?.filepath && error.message.includes('not found')) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    return allTasks;
+  }
+
+  /**
+   * Discover new tasks (without issue numbers) from all registered parsers
+   */
+  private async discoverAllNewTasks(
+    sourceTypes?: (SourceType | 'all')[]
+  ): Promise<TaskDocument[]> {
+    const parsers = sourceTypes
+      ? this.registry.getByTypes(sourceTypes)
+      : this.registry.getAll();
+
+    const allTasks: TaskDocument[] = [];
+
+    for (const parser of parsers) {
+      const tasks = await parser.discoverNewTasks();
+      allTasks.push(...tasks);
+    }
+
+    return allTasks;
   }
 
   /**
@@ -71,6 +132,73 @@ export class SyncEngine {
   }
 
   /**
+   * Track a deleted issue to prevent accidental re-creation
+   */
+  private trackDeletedIssue(
+    state: SyncState,
+    issueNumber: number,
+    title?: string,
+    filename?: string
+  ): void {
+    if (!state.deletedIssues) {
+      state.deletedIssues = {};
+    }
+    state.deletedIssues[issueNumber] = {
+      deletedAt: new Date().toISOString(),
+      lastKnownTitle: title,
+      localFilename: filename,
+    };
+  }
+
+  /**
+   * Check if an issue was previously deleted
+   */
+  isDeletedIssue(issueNumber: number): boolean {
+    const state = this.loadState();
+    return !!(state.deletedIssues && state.deletedIssues[issueNumber]);
+  }
+
+  /**
+   * Get info about a deleted issue
+   */
+  getDeletedIssueInfo(issueNumber: number): { deletedAt: string; lastKnownTitle?: string; localFilename?: string } | null {
+    const state = this.loadState();
+    return state.deletedIssues?.[issueNumber] || null;
+  }
+
+  /**
+   * Get all deleted issues
+   */
+  getDeletedIssues(): Array<{ issueNumber: number; deletedAt: string; lastKnownTitle?: string; localFilename?: string }> {
+    const state = this.loadState();
+    if (!state.deletedIssues) return [];
+    return Object.entries(state.deletedIssues).map(([num, info]) => ({
+      issueNumber: parseInt(num, 10),
+      ...info,
+    }));
+  }
+
+  /**
+   * Clear a deleted issue (allow re-creation)
+   */
+  clearDeletedIssue(issueNumber: number): void {
+    const state = this.loadState();
+    if (state.deletedIssues && state.deletedIssues[issueNumber]) {
+      delete state.deletedIssues[issueNumber];
+      this.saveState(state);
+    }
+  }
+
+  /**
+   * Clear all deleted issues
+   */
+  clearAllDeletedIssues(): void {
+    const state = this.loadState();
+    state.deletedIssues = {};
+    this.saveState(state);
+  }
+
+  /**
    * Detect and handle orphaned tasks (local files where GitHub issue was deleted)
    */
   private async detectOrphanedTasks(
@@ -91,11 +219,11 @@ export class SyncEngine {
   /**
    * Clean up orphaned tasks (delete local files where GitHub issue was deleted)
    */
-  async cleanOrphanedTasks(): Promise<{
+  async cleanOrphanedTasks(sourceTypes?: (SourceType | 'all')[]): Promise<{
     deleted: string[];
     skipped: string[];
   }> {
-    const tasks = await this.parser.discoverTasks();
+    const tasks = await this.discoverAllTasks(undefined, sourceTypes);
     const issueNumbers = tasks.map((t) => t.issueNumber);
     const issues = await this.github.getIssues(issueNumbers);
 
@@ -214,9 +342,9 @@ export class SyncEngine {
   /**
    * Perform full bidirectional sync
    */
-  async sync(filter?: SyncFilter): Promise<SyncResult> {
+  async sync(filter?: SyncFilter, sourceTypes?: (SourceType | 'all')[]): Promise<SyncResult> {
     const state = this.loadState();
-    const tasks = await this.parser.discoverTasks(filter);
+    const tasks = await this.discoverAllTasks(filter, sourceTypes);
 
     // Special handling for syncing an issue that doesn't have a local file yet
     if (filter?.issueNumber && tasks.length === 0) {
@@ -250,7 +378,12 @@ export class SyncEngine {
           ...partialFrontmatter
         } as TaskFrontmatter;
 
-        const task = await this.parser.createTask(issue.number, completeFrontmatter, body, status);
+        // Use the first registered parser (usually 'tasks') for creating new files
+        const defaultParser = this.registry.getAll()[0];
+        if (!defaultParser) {
+          throw new Error('No parsers registered');
+        }
+        const task = await defaultParser.createTask(issue.number, completeFrontmatter, body, status);
 
         result.pulled.push(issue.number);
 
@@ -400,9 +533,17 @@ export class SyncEngine {
   /**
    * Ensure status field is synced with folder location
    * Resolves conflicts, fills missing status, updates timestamps
+   * Note: Only works for parsers that support status resolution (e.g., TasksParser)
    */
   async ensureStatusSync(task: TaskDocument): Promise<TaskDocument> {
-    const resolvedStatus = this.parser.resolveStatusConflict(task);
+    const parser = this.getParserForTask(task);
+
+    // Only resolve status for parsers that support it
+    if (!parser.resolveStatusConflict) {
+      return task;
+    }
+
+    const resolvedStatus = parser.resolveStatusConflict(task);
 
     // If status needs updating
     if (task.frontmatter.status !== resolvedStatus) {
@@ -418,7 +559,7 @@ export class SyncEngine {
       };
 
       // Write back to file
-      await this.parser.writeTask(updatedTask);
+      await parser.writeTask(updatedTask);
 
       return updatedTask;
     }
@@ -436,7 +577,7 @@ export class SyncEngine {
         frontmatter: updatedFrontmatter,
       };
 
-      await this.parser.writeTask(updatedTask);
+      await parser.writeTask(updatedTask);
 
       return updatedTask;
     }
@@ -468,6 +609,7 @@ export class SyncEngine {
    */
   async pullIssue(issue: GitHubIssueData, existingTask: TaskDocument): Promise<void> {
     const { frontmatter, body } = this.mapper.githubToTask(issue, existingTask);
+    const parser = this.getParserForTask(existingTask);
 
     // Update task
     let updatedTask: TaskDocument = {
@@ -482,7 +624,7 @@ export class SyncEngine {
     // Always regenerate slug from GitHub title on pull
     if (frontmatter.title) {
       try {
-        const newFilepath = await this.parser.renameTask(
+        const newFilepath = await parser.renameTask(
           existingTask.filepath,
           existingTask.issueNumber,
           frontmatter.title // Pass GitHub title for slug generation
@@ -498,15 +640,15 @@ export class SyncEngine {
       }
     }
 
-    // Move to correct directory if status changed
+    // Move to correct directory if status changed (only for parsers that support it)
     const newStatus = frontmatter.status || existingTask.frontmatter.status || 'backlog';
     const currentStatus = this.getTaskStatus(updatedTask.filepath);
 
-    if (newStatus !== currentStatus) {
-      const movedTask = await this.parser.moveTask(updatedTask, newStatus);
-      await this.parser.writeTask(movedTask);
+    if (newStatus !== currentStatus && parser.moveTask) {
+      const movedTask = await parser.moveTask(updatedTask, newStatus);
+      await parser.writeTask(movedTask);
     } else {
-      await this.parser.writeTask(updatedTask);
+      await parser.writeTask(updatedTask);
     }
 
     console.log(`✓ Pulled #${issue.number} from GitHub`);
@@ -515,9 +657,9 @@ export class SyncEngine {
   /**
    * Push only - update GitHub from local
    */
-  async pushOnly(filter?: SyncFilter): Promise<SyncResult> {
+  async pushOnly(filter?: SyncFilter, sourceTypes?: (SourceType | 'all')[]): Promise<SyncResult> {
     const state = this.loadState();
-    const tasks = await this.parser.discoverTasks(filter);
+    const tasks = await this.discoverAllTasks(filter, sourceTypes);
     const issueNumbers = tasks.map((t) => t.issueNumber);
     const issues = await this.github.getIssues(issueNumbers);
 
@@ -565,9 +707,9 @@ export class SyncEngine {
   /**
    * Pull only - update local from GitHub
    */
-  async pullOnly(filter?: SyncFilter): Promise<SyncResult> {
+  async pullOnly(filter?: SyncFilter, sourceTypes?: (SourceType | 'all')[]): Promise<SyncResult> {
     const state = this.loadState();
-    const tasks = await this.parser.discoverTasks(filter);
+    const tasks = await this.discoverAllTasks(filter, sourceTypes);
 
     // Special handling for pulling an issue that doesn't have a local file yet
     if (filter?.issueNumber && tasks.length === 0) {
@@ -601,7 +743,12 @@ export class SyncEngine {
           ...partialFrontmatter
         } as TaskFrontmatter;
 
-        const task = await this.parser.createTask(issue.number, completeFrontmatter, body, status);
+        // Use the first registered parser (usually 'tasks') for creating new files
+        const defaultParser = this.registry.getAll()[0];
+        if (!defaultParser) {
+          throw new Error('No parsers registered');
+        }
+        const task = await defaultParser.createTask(issue.number, completeFrontmatter, body, status);
 
         result.pulled.push(issue.number);
 
@@ -670,12 +817,12 @@ export class SyncEngine {
   /**
    * Get status preview without making changes
    */
-  async status(filter?: SyncFilter): Promise<{
+  async status(filter?: SyncFilter, sourceTypes?: (SourceType | 'all')[]): Promise<{
     toSync: number[];
     conflicts: SyncConflict[];
   }> {
     const state = this.loadState();
-    const tasks = await this.parser.discoverTasks(filter);
+    const tasks = await this.discoverAllTasks(filter, sourceTypes);
 
     // Special handling for checking status of an issue without a local file
     if (filter?.issueNumber && tasks.length === 0) {
@@ -761,56 +908,187 @@ export class SyncEngine {
   }
 
   /**
-   * Rename numbered files that don't have corresponding GitHub issues.
-   * These files likely had numbers manually assigned but were never synced.
-   * Removes the number prefix so they can be created as new issues.
+   * Preview which files would have issue numbers stripped (dry run)
+   * Returns orphaned files with info about whether they were previously synced/deleted
    */
-  private async renameOrphanedNumberedFiles(): Promise<void> {
-    const allTasks = await this.parser.discoverTasks();
-
-    if (allTasks.length === 0) {
-      return;
+  async previewStripOrphanedFiles(): Promise<Array<{
+    issueNumber: number;
+    filename: string;
+    filepath: string;
+    wasDeleted: boolean;
+    deletedAt?: string;
+  }>> {
+    const tasksParser = this.registry.get('tasks') as import('./parsers').TasksParser | undefined;
+    if (!tasksParser) {
+      return [];
     }
 
-    // Get all issue numbers from discovered tasks
-    const issueNumbers = allTasks.map(t => t.issueNumber);
+    const numberedFiles = await tasksParser.discoverNumberedTasks();
+    if (numberedFiles.length === 0) {
+      return [];
+    }
+
+    const issueNumbers = numberedFiles.map(f => f.issueNumber);
+    const existingIssues = await this.github.getIssues(issueNumbers);
+    const state = this.loadState();
+
+    // Track newly discovered deleted issues
+    for (const file of numberedFiles) {
+      if (!existingIssues.has(file.issueNumber)) {
+        // Check if this was a previously synced issue that's now gone
+        const syncInfo = state.issues[file.issueNumber];
+        if (syncInfo && !state.deletedIssues?.[file.issueNumber]) {
+          // Was synced before but now 404 - track as deleted
+          this.trackDeletedIssue(state, file.issueNumber, undefined, file.filename);
+        }
+      }
+    }
+    this.saveState(state);
+
+    return numberedFiles
+      .filter(f => !existingIssues.has(f.issueNumber))
+      .map(f => {
+        const deletedInfo = state.deletedIssues?.[f.issueNumber];
+        return {
+          ...f,
+          wasDeleted: !!deletedInfo,
+          deletedAt: deletedInfo?.deletedAt,
+        };
+      });
+  }
+
+  /**
+   * Strip issue numbers from files that don't have corresponding GitHub issues.
+   * These files likely had numbers manually assigned (e.g., by AI agents) but were never synced.
+   * Removes the number prefix so they can be created as new issues with GitHub-assigned numbers.
+   * Note: Only works for tasks source (docs/tasks/)
+   *
+   * @param options.force - If true, strips even previously-deleted issues without warning
+   */
+  async stripOrphanedFiles(options: { force?: boolean } = {}): Promise<{
+    stripped: Array<{ oldFilename: string; newFilename: string; wasDeleted: boolean }>;
+    skippedDeleted: Array<{ filename: string; issueNumber: number; deletedAt: string }>;
+    errors: Array<{ filename: string; error: string }>;
+  }> {
+    const result = {
+      stripped: [] as Array<{ oldFilename: string; newFilename: string; wasDeleted: boolean }>,
+      skippedDeleted: [] as Array<{ filename: string; issueNumber: number; deletedAt: string }>,
+      errors: [] as Array<{ filename: string; error: string }>,
+    };
+
+    const tasksParser = this.registry.get('tasks') as import('./parsers').TasksParser | undefined;
+    if (!tasksParser) {
+      return result; // No tasks parser registered
+    }
+
+    // Use the new method to discover all numbered files
+    const numberedFiles = await tasksParser.discoverNumberedTasks();
+
+    if (numberedFiles.length === 0) {
+      return result;
+    }
+
+    // Get all issue numbers
+    const issueNumbers = numberedFiles.map(f => f.issueNumber);
 
     // Check which issues actually exist on GitHub
     const existingIssues = await this.github.getIssues(issueNumbers);
+    const state = this.loadState();
 
-    // Find tasks with numbers that don't exist on GitHub
-    const orphanedTasks = allTasks.filter(task => !existingIssues.has(task.issueNumber));
+    // Find files with numbers that don't exist on GitHub
+    const orphanedFiles = numberedFiles.filter(f => !existingIssues.has(f.issueNumber));
 
-    if (orphanedTasks.length === 0) {
-      return;
+    if (orphanedFiles.length === 0) {
+      console.log(chalk.green('✓ No orphaned numbered files found'));
+      return result;
     }
 
-    console.log(chalk.yellow(`\nFound ${orphanedTasks.length} numbered file(s) without GitHub issues.`));
-    console.log(chalk.yellow('These will be renamed to remove numbers and treated as new issues.\n'));
+    // Separate previously deleted from newly orphaned
+    const previouslyDeleted = orphanedFiles.filter(f => state.deletedIssues?.[f.issueNumber]);
+    const newlyOrphaned = orphanedFiles.filter(f => !state.deletedIssues?.[f.issueNumber]);
 
-    for (const task of orphanedTasks) {
-      const oldPath = task.filepath;
-      const oldFilename = task.filename;
+    // Show summary
+    console.log(chalk.yellow(`\nFound ${orphanedFiles.length} numbered file(s) without GitHub issues:`));
 
-      // Remove the number prefix (e.g., "011-foo.md" -> "foo.md")
-      const newFilename = oldFilename.replace(/^\d+-/, '');
-      const newPath = path.join(path.dirname(oldPath), newFilename);
-
-      // Check if target filename already exists
-      if (fs.existsSync(newPath)) {
-        console.log(chalk.red(`  ✗ Cannot rename ${oldFilename} -> ${newFilename} (file already exists)`));
-        continue;
+    if (newlyOrphaned.length > 0) {
+      console.log(chalk.cyan(`\n  Newly orphaned (never synced or number invented):`));
+      for (const file of newlyOrphaned) {
+        console.log(chalk.gray(`    - #${file.issueNumber}: ${file.filename}`));
       }
+    }
 
+    if (previouslyDeleted.length > 0) {
+      console.log(chalk.red(`\n  ⚠ Previously deleted from GitHub:`));
+      for (const file of previouslyDeleted) {
+        const info = state.deletedIssues![file.issueNumber];
+        const deletedDate = new Date(info.deletedAt).toLocaleDateString();
+        console.log(chalk.gray(`    - #${file.issueNumber}: ${file.filename} (deleted ${deletedDate})`));
+      }
+      if (!options.force) {
+        console.log(chalk.yellow(`\n  These were intentionally deleted. Use --force to override.`));
+      }
+    }
+    console.log();
+
+    // Process newly orphaned files
+    for (const file of newlyOrphaned) {
       try {
-        fs.renameSync(oldPath, newPath);
-        console.log(chalk.green(`  ✓ Renamed ${oldFilename} -> ${newFilename}`));
+        const newFilepath = await tasksParser.stripIssueNumber(file.filepath);
+        const newFilename = path.basename(newFilepath);
+
+        result.stripped.push({
+          oldFilename: file.filename,
+          newFilename,
+          wasDeleted: false,
+        });
+
+        console.log(chalk.green(`  ✓ ${file.filename} → ${newFilename}`));
       } catch (error: any) {
-        console.log(chalk.red(`  ✗ Failed to rename ${oldFilename}: ${error.message}`));
+        result.errors.push({
+          filename: file.filename,
+          error: error.message,
+        });
+        console.log(chalk.red(`  ✗ ${file.filename}: ${error.message}`));
       }
     }
 
-    console.log(); // Empty line for spacing
+    // Process previously deleted files (only if force)
+    for (const file of previouslyDeleted) {
+      const info = state.deletedIssues![file.issueNumber];
+
+      if (options.force) {
+        try {
+          const newFilepath = await tasksParser.stripIssueNumber(file.filepath);
+          const newFilename = path.basename(newFilepath);
+
+          // Clear from deleted issues since user is explicitly recreating
+          this.clearDeletedIssue(file.issueNumber);
+
+          result.stripped.push({
+            oldFilename: file.filename,
+            newFilename,
+            wasDeleted: true,
+          });
+
+          console.log(chalk.green(`  ✓ ${file.filename} → ${newFilename} (force)`));
+        } catch (error: any) {
+          result.errors.push({
+            filename: file.filename,
+            error: error.message,
+          });
+          console.log(chalk.red(`  ✗ ${file.filename}: ${error.message}`));
+        }
+      } else {
+        result.skippedDeleted.push({
+          filename: file.filename,
+          issueNumber: file.issueNumber,
+          deletedAt: info.deletedAt,
+        });
+      }
+    }
+
+    console.log();
+    return result;
   }
 
   /**
@@ -829,11 +1107,10 @@ export class SyncEngine {
       errors: [] as Array<{ filename: string; error: string }>,
     };
 
-    // First, handle numbered files that don't have GitHub issues
-    await this.renameOrphanedNumberedFiles();
+    // Note: Don't auto-strip orphans here - require explicit --strip-orphans flag
 
-    // Discover files without issue numbers
-    const newTasks = await this.parser.discoverNewTasks();
+    // Discover files without issue numbers (from all parsers)
+    const newTasks = await this.discoverAllNewTasks();
 
     if (newTasks.length === 0) {
       console.log('No new tasks to create');
@@ -919,8 +1196,11 @@ export class SyncEngine {
         const issueNumber = parseInt(urlMatch[1], 10);
         console.log(`✓ Created issue #${issueNumber}`);
 
+        // Get the parser for this task
+        const taskParser = this.getParserForTask(task);
+
         // Rename file with GitHub-assigned number (always use GitHub's numbering, never manual)
-        const newFilepath = await this.parser.renameTask(task.filepath, issueNumber);
+        const newFilepath = await taskParser.renameTask(task.filepath, issueNumber);
         const newFilename = path.basename(newFilepath);
 
         result.created.push({
@@ -929,11 +1209,12 @@ export class SyncEngine {
           newFilename,
         });
 
-        // Update sync state
-        const updatedTask = await this.parser.parseTask(newFilepath, issueNumber);
+        // Update sync state - re-discover task to get updated state
+        const updatedTasks = await taskParser.discoverTasks({ issueNumber });
+        const updatedTask = updatedTasks[0];
         const issue = await this.github.getIssue(issueNumber);
 
-        if (issue) {
+        if (issue && updatedTask) {
           state.issues[issueNumber] = {
             localHash: this.mapper.hashTask(updatedTask),
             remoteHash: this.mapper.hashIssue(issue),
