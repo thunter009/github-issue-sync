@@ -9,11 +9,10 @@
 pnpm install
 pnpm link --global
 
-# Set up environment
-export GITHUB_TOKEN=your_token_here
-export GITHUB_REPO=owner/repo
+# Authenticate (uses gh CLI keyring)
+gh auth login
 
-# Run sync
+# Run sync (repo auto-detected from git remote)
 github-issue-sync sync
 ```
 
@@ -29,7 +28,9 @@ github-issue-sync sync
 - ✅ Bidirectional sync with conflict detection
 - ✅ Interactive conflict resolution
 - ✅ Label management with color schemes
-- 🚧 Test suite implementation
+- ✅ Test suite (130+ tests)
+- ✅ Issue creation from local files
+- ✅ Orphaned file detection and stripping
 - 📋 npm registry publication
 - 📋 GitHub Actions integration
 
@@ -124,6 +125,7 @@ github-issue-sync sync
 **Options:**
 - `--create` - Create new GitHub issues from files without issue numbers
 - `--clean` - Interactively clean up orphaned local files where GitHub issues were deleted
+- `--strip-orphans` - Strip issue numbers from files without corresponding GitHub issues
 - `--file <path>` - Sync only the specified file
 - `--issue <number>` - Sync only the specified issue number
 
@@ -133,6 +135,9 @@ github-issue-sync sync --create
 
 # Clean up orphaned files
 github-issue-sync sync --clean
+
+# Strip orphaned numbers and create new issues
+github-issue-sync sync --strip-orphans --create
 
 # Sync a single file
 github-issue-sync sync --file docs/tasks/active/002-feature.md
@@ -153,6 +158,9 @@ github-issue-sync status --file docs/tasks/active/002-feature.md
 
 # Check status of a single issue
 github-issue-sync status --issue 123
+
+# Preview which files would have numbers stripped
+github-issue-sync status --strip-orphans
 ```
 
 ### `push`
@@ -247,12 +255,26 @@ console.log(`Conflicts: ${result.conflicts.length}`);
 
 ## Configuration
 
+### Authentication
+
+**Preferred: gh CLI** (uses secure keyring)
+```bash
+gh auth login
+```
+
+**Fallback: Environment variable** (for CI/CD)
+```bash
+export GITHUB_TOKEN=ghp_abc123...
+```
+
 ### Environment Variables
 
 | Variable | Required | Description | Example |
 |----------|----------|-------------|---------|
-| `GITHUB_TOKEN` | Yes | Personal access token | `ghp_abc123...` |
-| `GITHUB_REPO` | Yes | Repository (owner/name) | `thunter009/my-repo` |
+| `GITHUB_TOKEN` | No* | Fallback if gh CLI not available | `ghp_abc123...` |
+| `GITHUB_REPO` | No* | Repository (auto-detected from git remote) | `thunter009/my-repo` |
+
+*Auth required via either `gh auth login` or `GITHUB_TOKEN`. Repo auto-detected from git remote if not set.
 
 ### Directory Structure
 
@@ -277,12 +299,14 @@ Files must follow naming pattern: `NNN-slug.md` where `NNN` is the issue number.
 
 ## Troubleshooting
 
-### "GITHUB_TOKEN not set"
+### "No GitHub authentication found"
 
 ```bash
-# Add to .env.local
-echo "GITHUB_TOKEN=ghp_your_token" >> .env.local
-echo "GITHUB_REPO=owner/repo" >> .env.local
+# Preferred: use gh CLI
+gh auth login
+
+# Or set env var (for CI/CD)
+export GITHUB_TOKEN=ghp_your_token
 ```
 
 ### "Missing required frontmatter fields"
@@ -296,7 +320,50 @@ https://github.com/settings/tokens/new
 
 ### "Issue doesn't exist on GitHub"
 
-The sync tool only updates existing issues. It doesn't create new issues (yet). Manually create the issue on GitHub first.
+If you have files with issue numbers that don't exist on GitHub (orphaned files):
+
+```bash
+# Preview what would be stripped
+github-issue-sync status --strip-orphans
+
+# Strip numbers and create new issues with GitHub-assigned numbers
+github-issue-sync sync --strip-orphans --create
+```
+
+## Creating New Issues
+
+Create issues from local markdown files:
+
+1. **Create a file without an issue number:**
+   ```bash
+   docs/tasks/backlog/my-new-feature.md
+   ```
+
+2. **Run sync with --create:**
+   ```bash
+   github-issue-sync sync --create
+   ```
+
+3. **Tool creates issue and renames file:**
+   ```bash
+   # my-new-feature.md → 045-my-new-feature.md
+   ```
+
+GitHub assigns the issue number - the tool never invents numbers.
+
+### Handling AI-Generated Numbers
+
+If your AI coding agent creates files with arbitrary issue numbers (e.g., `011-feature.md`), but those numbers don't exist on GitHub:
+
+```bash
+# 1. Preview orphaned files
+github-issue-sync status --strip-orphans
+
+# 2. Strip numbers and create with real GitHub numbers
+github-issue-sync sync --strip-orphans --create
+```
+
+This renames `011-feature.md` → `feature.md` → creates issue → `045-feature.md`
 
 ## Development
 

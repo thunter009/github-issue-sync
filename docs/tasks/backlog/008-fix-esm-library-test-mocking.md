@@ -1,17 +1,14 @@
 ---
-created_utc: 2025-01-13T00:00:00Z
+created_utc: 2025-01-13T00:00:00.000Z
 title: Fix ESM Library Test Mocking
 severity: P3
 priority: low
 type: enhancement
 component: []
-labels:
-  - technical-debt
-  - testing
+labels: []
 reporter: thom
 status: backlog
 ---
-
 # Fix ESM Library Test Mocking
 
 ## Summary
@@ -22,7 +19,7 @@ GitHubClient and ConflictResolver tests exist but are excluded from CI due to Ty
 
 - **GitHubClient tests**: Octokit v22 is ESM-only, Jest struggles to transform/mock it
 - **ConflictResolver tests**: inquirer v9 is ESM-only, similar issues
-- Current workaround: Tests excluded via `testPathIgnorePatterns`
+- Current workaround: Tests excluded via 
 
 ## Action Items
 
@@ -44,7 +41,7 @@ GitHubClient and ConflictResolver tests exist but are excluded from CI due to Ty
 **Current State**:
 - Tests written: ✅
 - Tests compile with mocks: ❌
-- Excluded in `jest.config.js:9-10`
+- Excluded in 
 
 **Effort**: Medium (2-4 hours)
 **Priority**: Low (business logic well-tested, these are integration tests for external libs)

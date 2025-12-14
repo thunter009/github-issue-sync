@@ -7,17 +7,16 @@ type: enhancement
 component:
   - ci/cd
   - release-automation
-labels:
-  - automation
-  - github-actions
+labels: []
 reporter: thom
 status: backlog
 assignee: thunter009
-due_date: 2025-11-20
+due_date: 2025-11-20T00:00:00.000Z
 relates_to:
-  - https://github.com/thunter009/notice-wise-ui-k1/blob/main/.github/workflows/release.yml
-  - https://github.com/thunter009/notice-wise-ui-k1/blob/main/.releaserc.js
-  - "#003"
+  - >-
+    https://github.com/thunter009/notice-wise-ui-k1/blob/main/.github/workflows/release.yml
+  - 'https://github.com/thunter009/notice-wise-ui-k1/blob/main/.releaserc.js'
+  - '#003'
 ---
 # Implement semantic-release GitHub Action and infrastructure
 

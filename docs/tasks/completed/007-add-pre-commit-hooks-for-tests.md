@@ -5,9 +5,7 @@ severity: P3
 priority: low
 type: enhancement
 component: []
-labels:
-  - developer-experience
-  - quality
+labels: []
 reporter: thom
 status: completed
 completed_utc: '2025-11-18T00:44:50Z'

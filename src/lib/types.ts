@@ -31,6 +31,7 @@ export interface TaskDocument {
   body: string;
   lastModified: Date;
   folderLastModified: Date; // Parent directory modification time
+  sourceType?: 'tasks' | 'openspec'; // Source parser type
 }
 
 export interface GitHubIssueData {
@@ -51,6 +52,12 @@ export interface SyncState {
     localHash: string;
     remoteHash: string;
     lastSyncedAt: string;
+  }>;
+  /** Tracks issues that were deleted from GitHub to prevent accidental re-creation */
+  deletedIssues?: Record<number, {
+    deletedAt: string;
+    lastKnownTitle?: string;
+    localFilename?: string;
   }>;
 }
 
