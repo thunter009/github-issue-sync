@@ -36,7 +36,7 @@
     "@octokit/rest": "^22.0.0",
     "chalk": "^4.1.2",
     "commander": "^14.0.2",
-    "diff": "^8.0.2",
+    "diff": "^8.0.3",
     "dotenv": "^16.4.5",
     "gray-matter": "^4.0.3",
     "inquirer": "^9.3.8",

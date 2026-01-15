@@ -18,8 +18,8 @@ importers:
         specifier: ^14.0.2
         version: 14.0.2
       diff:
-        specifier: ^8.0.2
-        version: 8.0.2
+        specifier: ^8.0.3
+        version: 8.0.3
       dotenv:
         specifier: ^16.4.5
         version: 16.6.1
@@ -671,8 +671,8 @@ packages:
     resolution: {integrity: sha512-EjePK1srD3P08o2j4f0ExnylqRs5B9tJjcp9t1krH2qRi8CCdsYfwe9JgSLurFBWwq4uOlipzfk5fHNvwFKr8Q==}
     engines: {node: ^14.15.0 || ^16.10.0 || >=18.0.0}
 
-  diff@8.0.2:
-    resolution: {integrity: sha512-sSuxWU5j5SR9QQji/o2qMvqRNYRDOcBTgsJ/DeCf4iSN4gW+gNMXM7wFIP+fdXZxoNiAnHUTGjCr+TSWXdRDKg==}
+  diff@8.0.3:
+    resolution: {integrity: sha512-qejHi7bcSD4hQAZE0tNAawRK1ZtafHDmMTMkrrIGgSLl7hTnQHmKCeB45xAcbfTqK2zowkM3j3bHt/4b/ARbYQ==}
     engines: {node: '>=0.3.1'}
 
   dotenv@16.6.1:
@@ -2035,7 +2035,7 @@ snapshots:
 
   '@types/diff@8.0.0':
     dependencies:
-      diff: 8.0.2
+      diff: 8.0.3
 
   '@types/graceful-fs@4.1.9':
     dependencies:
@@ -2308,7 +2308,7 @@ snapshots:
 
   diff-sequences@29.6.3: {}
 
-  diff@8.0.2: {}
+  diff@8.0.3: {}
 
   dotenv@16.6.1: {}
 
